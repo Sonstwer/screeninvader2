@@ -1,0 +1,16 @@
+[Unit]
+Description=ScreenInvader 2.0 Flask Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/screeninvader2
+ExecStart=/usr/bin/python3 /opt/screeninvader2/server.py
+Restart=on-failure
+User=screeninvader
+Group=screeninvader
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

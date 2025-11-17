@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <title>ScreenInvader 2.0</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrapper">
+    <header>
+        <h1>ScreenInvader 2.0</h1>
+        <p>Gemeinsame YouTube-Playlist im lokalen Netzwerk</p>
+    </header>
+
+    <main>
+        <section class="search-section">
+            <h2>Suche</h2>
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="YouTube-Suche …">
+                <button id="search-button">Suchen</button>
+            </div>
+            <div id="search-results"></div>
+        </section>
+
+        <section class="queue-section">
+            <h2>Warteschlange</h2>
+            <div class="queue-actions">
+                <button id="clear-queue-button">Warteschlange leeren</button>
+            </div>
+            <div id="queue-list"></div>
+        </section>
+
+        <section class="player-section">
+            <h2>Player</h2>
+            <div id="player-status">
+                <div><strong>Status:</strong> <span id="status-text">–</span></div>
+                <div><strong>Titel:</strong> <span id="status-title">–</span></div>
+                <div><strong>Position:</strong> <span id="status-position">–</span></div>
+            </div>
+            <div class="player-controls">
+                <button id="pause-button">Pause / Weiter</button>
+                <button id="skip-button">Überspringen</button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>ScreenInvader 2.0 – lokale Jukebox</p>
+    </footer>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
