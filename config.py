@@ -29,14 +29,30 @@ MPV_COMMAND = [
 # Anzahl Suchergebnisse
 SEARCH_LIMIT = 10
 
-# yt-dlp Optionen
+# yt-dlp Basiskonfiguration
+
+# Optionen für Suchanfragen
 YTDLP_SEARCH_OPTS = {
     "quiet": True,
     "skip_download": True,
     "default_search": "ytsearch",
+    "noplaylist": True,
+    "forceipv4": True,
 }
 
+# Optionen für das Ermitteln der Stream-URL
+# 720p-Limit, damit der Banana Pi nicht überfordert wird
 YTDLP_STREAM_OPTS = {
     "quiet": True,
-    "format": "bestaudio*+bestvideo* / best",
+    "format": "bv*[height<=720]+ba / best[height<=720] / best",
+    "noplaylist": True,
+    "forceipv4": True,
+}
+
+# Spezielle Extraktor-Argumente für YouTube:
+# Nutze den Android-Client, der oft weniger restriktiv ist als der Web-Client.
+YTDLP_EXTRACTOR_ARGS = {
+    "youtube": {
+        "player_client": ["android"],
+    }
 }

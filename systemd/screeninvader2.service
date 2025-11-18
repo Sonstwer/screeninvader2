@@ -1,16 +1,32 @@
 [Unit]
-Description=ScreenInvader 2.0 Flask Server
-After=network-online.target
+Description=ScreenInvader 2.0 Player + Webserver
+After=network-online.target sound.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/screeninvader2
-ExecStart=/usr/bin/python3 /opt/screeninvader2/server.py
-Restart=on-failure
 User=screeninvader
 Group=screeninvader
-Environment=PYTHONUNBUFFERED=1
+
+WorkingDirectory=/opt/screeninvader2
+
+# mpv auf TTY3 ausführen
+TTYPath=/dev/tty3
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+
+# kleine Verzögerung, damit du beim Boot kurz ins Terminal kommst
+ExecStartPre=/bin/sleep 3
+
+# Python-Server starten (mpv wird dynamisch erzeugt)
+ExecStart=/usr/bin/python3 server.py
+
+Restart=always
+RestartSec=2
+
+# wichtig für Zugriff auf Audio/Video
+AmbientCapabilities=CAP_SYS_TTY_CONFIG
 
 [Install]
 WantedBy=multi-user.target
