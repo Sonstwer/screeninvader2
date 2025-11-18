@@ -26,7 +26,7 @@ MPV_COMMAND = [
     "--input-ipc-server={}".format(MPV_SOCKET_PATH),
 ]
 
-# Anzahl Suchergebnisse
+# Anzahl Suchergebnisse im Web-UI
 SEARCH_LIMIT = 10
 
 # yt-dlp: Optionen für Suchanfragen
@@ -35,14 +35,11 @@ YTDLP_SEARCH_OPTS = {
     "skip_download": True,
     "default_search": "ytsearch",
     "noplaylist": True,
-    # forceipv4 kannst du bei Bedarf auf False setzen, aber auf vielen
-    # Heimnetzen ist es stabiler mit IPv4.
     "forceipv4": True,
 }
 
 # yt-dlp: Optionen für das Ermitteln der Stream-URL
-# Deine gewünschte Kette:
-#   zuerst bis 1080p, dann 720, 480, 360, dann generische Fallbacks.
+# Bevorzugt bis 1080p, mit Fallback auf 720/480/360, danach generische Fallbacks.
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,

@@ -10,6 +10,12 @@ from config import (
 
 
 class YTDLPWrapper:
+    """
+    Wrapper um yt_dlp, der sowohl Text-Suchen (ytsearch) als auch direkte URLs
+    (YouTube, ORF, etc.) unterstützt und ein einfaches Ergebnisformat für das
+    Web-UI bereitstellt.
+    """
+
     def __init__(self) -> None:
         self.search_opts = dict(YTDLP_SEARCH_OPTS)
         self.stream_opts = dict(YTDLP_STREAM_OPTS)
@@ -24,20 +30,23 @@ class YTDLPWrapper:
 
     def search(self, query: str, limit: int = SEARCH_LIMIT) -> List[Dict]:
         """
-        YouTube-Suche, liefert eine Liste mit Metadaten.
+        Suche nach Videos.
 
-        - Bei direkter URL: genau dieses Video/Playlist wird aufgelöst.
-        - Bei normalem Text: ytsearchN:query
+        - Wenn query eine URL ist:
+          -> wird genau diese Ressource (Video oder Playlist) aufgelöst.
+        - Wenn query Text ist:
+          -> ytsearchN:query wird verwendet.
         """
         query = (query or "").strip()
         if not query:
             return []
 
-        # Direkte URL -> Video oder Playlist
+        # Direkte URL (YouTube, ORF, etc.)
         if self._is_url(query):
             opts = dict(self.stream_opts)
             opts["quiet"] = True
             results: List[Dict] = []
+
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(query, download=False)
 
@@ -97,7 +106,7 @@ class YTDLPWrapper:
 
     def get_stream_url(self, video_url: str) -> Optional[str]:
         """
-        Liefert eine direkte Stream-URL für mpv.
+        Liefert eine direkte Stream-URL für mpv, auf Basis der YTDLP_STREAM_OPTS.
         """
         if not video_url:
             return None
@@ -106,6 +115,9 @@ class YTDLPWrapper:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
 
+        # Je nach yt-dlp-Version:
+        # - direkte Medien-URL in 'url'
+        # - Fallback: 'webpage_url'
         if "url" in info:
             return info["url"]
         if "webpage_url" in info:
