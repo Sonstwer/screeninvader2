@@ -5,17 +5,14 @@ import yt_dlp
 from config import (
     YTDLP_SEARCH_OPTS,
     YTDLP_STREAM_OPTS,
-    YTDLP_EXTRACTOR_ARGS,
     SEARCH_LIMIT,
 )
 
 
 class YTDLPWrapper:
     def __init__(self) -> None:
-        # Lokale Kopien der Basis-Optionen
         self.search_opts = dict(YTDLP_SEARCH_OPTS)
         self.stream_opts = dict(YTDLP_STREAM_OPTS)
-        self.extractor_args = dict(YTDLP_EXTRACTOR_ARGS)
 
     def _is_url(self, text: str) -> bool:
         lower = (text or "").lower().strip()
@@ -24,15 +21,6 @@ class YTDLPWrapper:
         if "youtube.com" in lower or "youtu.be" in lower:
             return True
         return False
-
-    def _build_opts(self, base: Dict) -> Dict:
-        """
-        Kombiniert Basisoptionen mit den Extraktor-Argumenten.
-        """
-        opts = dict(base)
-        if self.extractor_args:
-            opts["extractor_args"] = self.extractor_args
-        return opts
 
     def search(self, query: str, limit: int = SEARCH_LIMIT) -> List[Dict]:
         """
@@ -45,18 +33,20 @@ class YTDLPWrapper:
         if not query:
             return []
 
-        # Direkte URL?
+        # Direkte URL -> Video oder Playlist
         if self._is_url(query):
-            opts = self._build_opts(self.stream_opts)
-            entries: List[Dict] = []
+            opts = dict(self.stream_opts)
+            opts["quiet"] = True
+            results: List[Dict] = []
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(query, download=False)
-            # Kann Video oder Playlist sein
+
+            # Playlist?
             if "entries" in info:
                 for entry in info["entries"]:
                     if not entry:
                         continue
-                    entries.append(
+                    results.append(
                         {
                             "id": entry.get("id"),
                             "title": entry.get("title"),
@@ -66,7 +56,8 @@ class YTDLPWrapper:
                             "webpage_url": entry.get("webpage_url"),
                         }
                     )
-                return entries
+                return results
+
             # Einzelnes Video
             return [
                 {
@@ -81,7 +72,7 @@ class YTDLPWrapper:
 
         # Normale Textsuche mit mehreren Wörtern
         search_query = "ytsearch{}:{}".format(limit, query)
-        opts = self._build_opts(self.search_opts)
+        opts = dict(self.search_opts)
         opts["default_search"] = "ytsearch"
 
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -111,13 +102,10 @@ class YTDLPWrapper:
         if not video_url:
             return None
 
-        opts = self._build_opts(self.stream_opts)
+        opts = dict(self.stream_opts)
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(video_url, download=False)
 
-        # Je nach yt-dlp-Version:
-        # - Direkt 'url'
-        # - oder 'webpage_url' (Fallback)
         if "url" in info:
             return info["url"]
         if "webpage_url" in info:

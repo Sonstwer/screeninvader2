@@ -29,32 +29,31 @@ MPV_COMMAND = [
 # Anzahl Suchergebnisse
 SEARCH_LIMIT = 10
 
-# yt-dlp Basiskonfiguration
+# yt-dlp: Optionen für Suchanfragen
+YTDLP_SEARCH_OPTS = {
+    "quiet": True,
+    "skip_download": True,
+    "default_search": "ytsearch",
+    "noplaylist": True,
+    # forceipv4 kannst du bei Bedarf auf False setzen, aber auf vielen
+    # Heimnetzen ist es stabiler mit IPv4.
+    "forceipv4": True,
+}
 
-# Optionen für Suchanfragen
+# yt-dlp: Optionen für das Ermitteln der Stream-URL
+# Deine gewünschte Kette:
+#   zuerst bis 1080p, dann 720, 480, 360, dann generische Fallbacks.
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,
     "forceipv4": True,
     "format": (
-        # zuerst bis 1080p versuchen
         "bv*[height<=1080]+ba / "
-        # dann 720, 480, 360
         "bv*[height<=720]+ba / "
         "bv*[height<=480]+ba / "
         "bv*[height<=360]+ba / "
-        # generische Fallbacks
         "bestvideo+bestaudio / "
         "bestaudio / "
         "best"
     ),
-}
-
-
-# Spezielle Extraktor-Argumente für YouTube:
-# Nutze den Android-Client, der oft weniger restriktiv ist als der Web-Client.
-YTDLP_EXTRACTOR_ARGS = {
-    "youtube": {
-        "player_client": ["android"],
-    }
 }
