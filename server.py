@@ -134,7 +134,6 @@ def start_playback_worker_once():
         _playback_worker_started = True
 
 
-@app.before_serving
 def init_background_worker():
     start_playback_worker_once()
 
