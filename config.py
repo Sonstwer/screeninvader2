@@ -32,22 +32,24 @@ SEARCH_LIMIT = 10
 # yt-dlp Basiskonfiguration
 
 # Optionen für Suchanfragen
-YTDLP_SEARCH_OPTS = {
-    "quiet": True,
-    "skip_download": True,
-    "default_search": "ytsearch",
-    "noplaylist": True,
-    "forceipv4": True,
-}
-
-# Optionen für das Ermitteln der Stream-URL
-# 720p-Limit, damit der Banana Pi nicht überfordert wird
 YTDLP_STREAM_OPTS = {
     "quiet": True,
-    "format": "bv*[height<=720]+ba / best[height<=720] / best",
     "noplaylist": True,
     "forceipv4": True,
+    "format": (
+        # zuerst bis 1080p versuchen
+        "bv*[height<=1080]+ba / "
+        # dann 720, 480, 360
+        "bv*[height<=720]+ba / "
+        "bv*[height<=480]+ba / "
+        "bv*[height<=360]+ba / "
+        # generische Fallbacks
+        "bestvideo+bestaudio / "
+        "bestaudio / "
+        "best"
+    ),
 }
+
 
 # Spezielle Extraktor-Argumente für YouTube:
 # Nutze den Android-Client, der oft weniger restriktiv ist als der Web-Client.
