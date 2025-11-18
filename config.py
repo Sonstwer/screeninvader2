@@ -12,7 +12,12 @@ QUEUE_FILE = os.path.join(BASE_DIR, "queue.json")
 # mpv IPC Socket (für JSON-API)
 MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 
-# mpv-Startbefehl
+# Standard-Audioausgabe:
+#   "hdmi"   -> HDMI-Ausgang
+#   "analog" -> 3,5mm-Klinke
+AUDIO_OUTPUT = "hdmi"
+
+# Basis-Startbefehl für mpv (weitere Optionen werden in player.py ergänzt)
 MPV_COMMAND = [
     "mpv",
     "--idle=yes",

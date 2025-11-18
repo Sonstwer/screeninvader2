@@ -1,42 +1,30 @@
 # Installation auf Banana Pi mit Armbian (Bookworm, Early Beta)
 
-Diese Anleitung beschreibt die Installation von ScreenInvader 2.0
-auf einem Banana Pi (z. B. BPI-M1) mit Armbian (Debian/Ubuntu-basiert).
-Der aktuelle Stand ist eine **frühe, ungetestete Beta** – es gibt keine Garantie,
-dass ScreenInvader 2.0 oder das verwendete Image auf deiner Hardware stabil läuft.
+Diese Anleitung beschreibt die Installation von ScreenInvader 2.0 auf einem Banana Pi M1 (A20) 
+mit Armbian (Debian/Ubuntu-basiert). Aktueller Stand ist eine **frühe, ungetestete Beta**.
 
-## 0. Hinweis zum verwendeten Armbian-Image (Quelle / Download)
+## 0. Empfohlenes Armbian-Image
 
-Empfohlenes Image (Stand: 08.07.2023, Community-Build):
+**Datei:** Armbian_23.08.0-trunk_Bananapi_bookworm_current_6.1.37.img.xz  
+**Quelle:** Offizielles Banana-Pi-/Armbian-Community Google-Drive (über das BPI-M1-Wiki verlinkt)  
+**Basis:** Debian 12 „Bookworm“, Kernel 6.1.37, „current“, kein Desktop
 
-- Dateiname: `Armbian_23.08.0-trunk_Bananapi_bookworm_current_6.1.37.img.xz`
-- Basis: Debian 12 „Bookworm“, Kernel 6.1.37, „current“ (ohne Desktop)
-- Quelle: Banana Pi / Armbian Community Google-Drive-Verzeichnis
-  (verlinkt z. B. im Banana-Pi-Wiki für BPI-M1)
+Hinweis: Community-Build → keine volle Stabilitätsgarantie.
 
-Wichtig:
-- Es handelt sich um einen **Community-Build, nicht um ein offiziell voll unterstütztes Image**.
-- Weder das Image noch ScreenInvader 2.0 sind ausführlich getestet.
-- Abstürze, fehlende Video-/Audio-Ausgabe oder Bootprobleme sind möglich.
+## 1. Image unter Windows flashen (Balena Etcher)
 
-## 1. Armbian-Image beschaffen und auf SD-Karte schreiben (Windows mit Balena Etcher)
-
-1. Lade die Datei `Armbian_23.08.0-trunk_Bananapi_bookworm_current_6.1.37.img.xz`
-   aus dem offiziellen Banana-Pi-Armbian-Downloadordner (Google Drive / Wiki-Verlinkung) herunter.
-2. Installiere **Balena Etcher** unter Windows.
-3. Stecke eine geeignete SD-Karte in deinen Kartenleser (alle Daten darauf werden gelöscht).
-4. Starte Balena Etcher und wähle:
-   - „Flash from file“ → die heruntergeladene `.img.xz`-Datei,
-   - „Select target“ → deine SD-Karte,
+1. Image herunterladen.
+2. Balena Etcher installieren.
+3. SD-Karte einlegen.
+4. In Etcher:
+   - „Flash from file“ → `.img.xz`
+   - „Select target“ → SD-Karte
    - „Flash!“
-5. Nach erfolgreichem Schreiben die SD-Karte sicher entfernen und in den Banana Pi einlegen.
-6. Banana Pi mit Strom versorgen und booten lassen (erster Boot kann etwas länger dauern).
+5. SD-Karte in den Banana Pi einsetzen und booten.
 
 ## 2. Grundsystem vorbereiten
 
-Per SSH oder direkt an der Konsole anmelden (Standardzugangsdaten
-laut Armbian-Dokumentation, meistens `root` beim ersten Login, danach
-wird ein eigener Benutzer angelegt).
+Einloggen per HDMI oder SSH (nach erstem Login Benutzer*in anlegen).
 
 System aktualisieren:
 
@@ -45,55 +33,60 @@ sudo apt update
 sudo apt upgrade -y
 ```
 
-Benötigte Pakete installieren (Python, Flask, yt-dlp, mpv, ffmpeg):
+Benötigte Pakete installieren:
 
 ```bash
-sudo apt install -y python3 python3-pip python3-flask yt-dlp mpv ffmpeg
+sudo apt install -y     python3     python3-pip     python3-flask     ffmpeg     mpv
 ```
 
-Falls `yt-dlp` nicht als Paket verfügbar ist, alternativ via `pip` installieren:
+### yt-dlp installieren (empfohlene stabile Methode via GitHub Binary)
 
 ```bash
-sudo pip3 install yt-dlp
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp      -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
 ```
 
-Beachte: Auch diese Paketkombination ist aktuell **nicht umfassend getestet**.
-Änderungen in yt-dlp, mpv oder deren Abhängigkeiten können ScreenInvader 2.0
-jederzeit brechen.
+### Flask überprüfen
 
-## 3. Systembenutzer für ScreenInvader anlegen
+```bash
+python3 -c "import flask" || echo "Flask fehlt!"
+```
+
+## 3. Benutzer*in für ScreenInvader anlegen
 
 ```bash
 sudo useradd -r -s /usr/sbin/nologin screeninvader || true
 ```
 
-## 4. Projekt nach /opt kopieren
+## 4. Projekt installieren
 
 ```bash
 sudo mkdir -p /opt/screeninvader2
 sudo chown "$USER":"$USER" /opt/screeninvader2
-```
-
-Nun den Inhalt des Repositories nach `/opt/screeninvader2` kopieren.
-Empfohlen wird ein direktes `git clone` (setzt Netzwerk am Banana Pi voraus).
-
-```bash
 cd /opt/screeninvader2
 git clone https://github.com/Sonstwer/screeninvader2.git .
 ```
 
-Alternativ kann das Repository auf einem anderen Rechner geklont und
-per `scp`/`rsync` auf den Banana Pi übertragen werden.
-
-Danach die Besitzrechte auf den Dienstbenutzer umstellen:
+Rechte setzen:
 
 ```bash
 sudo chown -R screeninvader:screeninvader /opt/screeninvader2
 ```
 
-## 5. systemd-Unit installieren
+## 5. Manuell testen (wichtig!)
 
-Bereitgestellte Unit-Datei kopieren:
+```bash
+sudo -u screeninvader -s
+cd /opt/screeninvader2
+python3 server.py
+```
+
+Wenn der Server startet → OK.  
+Mit `Strg+C` beenden.
+
+Wenn ein Fehler erscheint (z. B. `ModuleNotFoundError`) → Paketinstallation prüfen.
+
+## 6. systemd-Dienst aktivieren
 
 ```bash
 sudo cp /opt/screeninvader2/systemd/screeninvader2.service /etc/systemd/system/
@@ -108,47 +101,42 @@ Status prüfen:
 sudo systemctl status screeninvader2.service
 ```
 
-## 6. Zugriff im Netzwerk
+Sollte „active (running)“ anzeigen.
 
-Die IP-Adresse des Banana Pi ermitteln (z. B. mit `ip addr` oder über den Router)
-und im Browser eines Geräts im selben Netzwerk aufrufen:
+## 7. Zugriff im Browser
 
-```text
-http://BANANAPI_IP:5000/
+IP herausfinden:
+
+```bash
+ip addr
 ```
 
-Dort sollte das Web-Interface von ScreenInvader 2.0 erscheinen –
-sofern alle Komponenten auf diesem Setup funktionieren.
-Andernfalls die Hinweise im nächsten Abschnitt beachten.
+Dann:
 
-## 7. Hinweise und Troubleshooting (Beta-Status)
+```
+http://IP_DES_BANANAPI:5000/
+```
 
-- Wenn kein Audio/Video ausgegeben wird, mpv auf der Kommandozeile testen:
+## 8. Troubleshooting
 
-  ```bash
-  sudo -u screeninvader -s
-  cd /opt/screeninvader2
-  mpv https://www.youtube.com/watch?v=dQw4w9WgXcQ
-  ```
+### Kein Audio/Video
+```bash
+sudo -u screeninvader -s
+mpv https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
 
-- Falls yt-dlp Probleme macht, Version aktualisieren:
+### yt-dlp Probleme
+```bash
+yt-dlp --force-ipv4 URL
+```
 
-  ```bash
-  sudo yt-dlp -U || sudo pip3 install --upgrade yt-dlp
-  ```
+Falls das funktioniert, im Code `--force-ipv4` ergänzen.
 
-- Logs des Dienstes mit `journalctl` einsehen:
+### Logs prüfen
+```bash
+sudo journalctl -u screeninvader2.service -f
+```
 
-  ```bash
-  sudo journalctl -u screeninvader2.service -f
-  ```
+### Beta-Hinweis
+Dieses Setup ist experimentell. Funktion kann je nach Banana-Pi-Revision variieren.
 
-- Beachte noch einmal: Dies ist eine **frühe, ungetestete Beta**.
-  Es kann sein, dass ScreenInvader 2.0 auf diesem Image oder mit
-  deiner Banana-Pi-Revision gar nicht startet oder nur instabil läuft.
-
-In diesem `docs/`-Verzeichnis können weitere Installationsanleitungen
-für andere Boards oder Distributionen ergänzt werden, z. B.
-
-- `INSTALL_RASPBERRYPI.md`
-- `INSTALL_GENERIC_DEBIAN.md`
