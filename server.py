@@ -1,5 +1,6 @@
 import threading
 import time
+import traceback
 
 from flask import Flask, request, jsonify, render_template
 
@@ -7,7 +8,6 @@ from config import HOST, PORT, QUEUE_FILE
 from queue_manager import QueueManager
 from player import MPVPlayer
 from yt_wrapper import YTDLPWrapper
-
 
 app = Flask(__name__)
 
@@ -32,6 +32,8 @@ def api_search():
         results = yt.search(query)
         return jsonify({"results": results})
     except Exception as e:
+        print("Search error:", str(e))
+        traceback.print_exc()
         return jsonify({"error": "search_failed", "details": str(e)}), 500
 
 
@@ -53,14 +55,15 @@ def api_add_queue():
         return jsonify({"error": "missing_webpage_url"}), 400
 
     item = {
-        "id": video_id,
+        "id": video_id if video_id else webpage_url,
         "title": title,
         "channel": channel,
         "duration": duration,
         "webpage_url": webpage_url,
+        "status": "queued",
     }
-    queue_manager.add_item(item)
-    return jsonify({"status": "ok"})
+    saved_item = queue_manager.add_item(item)
+    return jsonify({"status": "ok", "item": saved_item})
 
 
 @app.route("/api/queue/clear", methods=["POST"])
@@ -90,6 +93,7 @@ def api_remove_from_queue():
 def api_player_status():
     status = player.get_status()
     status["queue_size"] = queue_manager.size()
+    status["queue_playing_item"] = queue_manager.get_playing_item()
     return jsonify(status)
 
 
@@ -101,28 +105,53 @@ def api_player_pause():
 
 @app.route("/api/player/skip", methods=["POST"])
 def api_player_skip():
+    currently_playing = queue_manager.get_playing_item()
+    if currently_playing:
+        queue_manager.mark_done_by_id(currently_playing.get("id"))
     player.stop()
     return jsonify({"status": "ok"})
 
 
 def playback_worker():
-    """Hintergrund-Thread für Auto-Play der Queue."""
+    """
+    Hintergrund-Thread:
+    - sucht das nächste Element mit status='queued'
+    - versucht, die Stream-URL zu ermitteln
+    - markiert nur bei erfolgreichem Start auf 'playing'
+    - markiert bei Fehlern auf 'error'
+    """
     while True:
         try:
-            if not queue_manager.is_empty():
-                if not player.is_playing():
-                    next_item = queue_manager.pop_next()
-                    if next_item is not None:
-                        url = next_item.get("webpage_url")
-                        if url:
-                            try:
-                                stream_url = yt.get_stream_url(url)
-                                if stream_url:
-                                    player.play_url(stream_url)
-                            except Exception:
-                                pass
+            if not player.is_playing():
+                currently_playing = queue_manager.get_playing_item()
+                if currently_playing is not None:
+                    queue_manager.mark_done_by_id(currently_playing.get("id"))
+
+                next_item = queue_manager.get_next_queued_item()
+                if next_item is not None:
+                    item_id = next_item.get("id")
+                    url = next_item.get("webpage_url")
+
+                    if url:
+                        try:
+                            stream_url = yt.get_stream_url(url)
+                            if stream_url:
+                                player.play_url(stream_url)
+                                queue_manager.mark_playing_by_id(item_id)
+                            else:
+                                queue_manager.mark_error_by_id(
+                                    item_id,
+                                    "Keine Stream-URL ermittelbar"
+                                )
+                        except Exception as e:
+                            print("Playback error:", str(e))
+                            traceback.print_exc()
+                            queue_manager.mark_error_by_id(item_id, str(e))
+
             time.sleep(2.0)
-        except Exception:
+        except Exception as e:
+            print("Worker error:", str(e))
+            traceback.print_exc()
             time.sleep(2.0)
 
 
