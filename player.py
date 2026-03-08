@@ -25,11 +25,11 @@ class MPVPlayer:
         # Häufig:
         #   hw:0,0 -> HDMI
         #   hw:0,1 -> Analog (3,5mm)
-        ao = (AUDIO_OUTPUT or "hdmi").lower()
-        if ao == "analog":
-            cmd.append("--audio-device=alsa/hw:0,1")
-        else:
-            cmd.append("--audio-device=alsa/hw:0,0")
+	ao = (AUDIO_OUTPUT or "hdmi").lower()
+	if ao == "analog":
+	    cmd.append("--audio-device=alsa/hw:1,0")
+	else:
+	    cmd.append("--audio-device=alsa/hw:0,0")
 
         # IP-Adresse ermitteln und als OSD-Text einblenden
         ip_text = None
