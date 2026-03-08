@@ -13,26 +13,31 @@ QUEUE_FILE = os.path.join(BASE_DIR, "queue.json")
 MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 
 # Standard-Audioausgabe:
-#   "hdmi"   -> HDMI-Ausgang
-#   "analog" -> 3,5mm-Klinke
+#   "hdmi"   -> HDMI-Ausgang (bei deinem Board hw:0,0)
+#   "analog" -> 3,5mm-Klinke (bei deinem Board hw:1,0)
 AUDIO_OUTPUT = "hdmi"
 
-# mpv-Startbefehl – Audio-only
+# Such-Cache
+SEARCH_CACHE_TTL_SECONDS = 300
+SEARCH_CACHE_MAX_ITEMS = 50
+
+# mpv-Startbefehl – Audio-only mit sichtbarem Idle-Fenster
 MPV_COMMAND = [
     "mpv",
     "--idle=yes",
-    "--force-window=no",
+    "--force-window=yes",
     "--no-video",
     "--no-terminal",
     "--input-ipc-server={}".format(MPV_SOCKET_PATH),
 
-    # UI reduzieren
+    # UI / OSD
     "--osc=no",
     "--osd-bar=no",
     "--audio-display=no",
     "--player-operation-mode=cplayer",
+    "--osd-level=3",
 
-    # Audio-only: eher konservativ
+    # Audio-only konservativ puffern
     "--cache=yes",
     "--demuxer-readahead-secs=8",
 ]

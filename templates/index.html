@@ -1,114 +1,132 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <title>ScreenInvader 2.0</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-      background: #111;
-      color: #eee;
-    }
-    h1, h2 {
-      margin-top: 0;
-    }
-    .row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-    input[type="text"] {
-      flex: 1;
-      min-width: 280px;
-      padding: 10px;
-      font-size: 16px;
-    }
-    button {
-      padding: 10px 14px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .panel {
-      background: #1b1b1b;
-      border: 1px solid #333;
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-    .list-item {
-      border-bottom: 1px solid #333;
-      padding: 10px 0;
-    }
-    .list-item:last-child {
-      border-bottom: none;
-    }
-    .title {
-      font-weight: bold;
-    }
-    .meta {
-      color: #bbb;
-      font-size: 13px;
-      margin-top: 4px;
-    }
-    .controls {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 8px;
-    }
-    .status {
-      font-size: 13px;
-      margin-top: 4px;
-    }
-    .status-queued { color: #ccc; }
-    .status-playing { color: #66bb6a; }
-    .status-paused { color: #ffa726; }
-    .status-done { color: #64b5f6; }
-    .status-error { color: #ef5350; }
-    .current-box {
-      font-size: 15px;
-      line-height: 1.5;
-    }
-    .small {
-      font-size: 13px;
-      color: #bbb;
-    }
-  </style>
+    <meta charset="utf-8">
+    <title>ScreenInvader 2.0</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <h1>ScreenInvader 2.0</h1>
+<div class="wrapper">
+    <header class="topbar">
+        <div>
+            <h1>ScreenInvader 2.0</h1>
+            <p>Lokale Audio-Jukebox im Netzwerk</p>
+        </div>
+        <div class="topbar-meta">
+            <span class="chip">Audio only</span>
+        </div>
+    </header>
 
-  <div class="panel">
-    <h2>Suche</h2>
-    <div class="row">
-      <input id="search-input" type="text" placeholder="Suchbegriff oder direkte URL eingeben">
-      <button id="search-button">Suchen</button>
-    </div>
-    <div id="search-results"></div>
-  </div>
+    <main class="layout">
+        <section class="card search-section">
+            <div class="section-head">
+                <h2>Suche</h2>
+            </div>
 
-  <div class="panel">
-    <h2>Player</h2>
-    <div id="player-status" class="current-box">Leerlauf</div>
-    <div class="controls">
-      <button id="btn-play">Play</button>
-      <button id="btn-pause">Pause</button>
-      <button id="btn-resume">Resume</button>
-      <button id="btn-stop">Stop</button>
-      <button id="btn-prev">Previous</button>
-      <button id="btn-next">Next</button>
-      <button id="btn-clear">Playlist leeren</button>
-    </div>
-  </div>
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="YouTube-Suche oder direkte URL …">
+                <button id="search-button" class="primary-button">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M21 21l-4.35-4.35"></path>
+                            <circle cx="11" cy="11" r="6"></circle>
+                        </svg>
+                    </span>
+                    <span class="btn-label">Suchen</span>
+                </button>
+            </div>
 
-  <div class="panel">
-    <h2>Wiedergabeliste</h2>
-    <div id="queue-list"></div>
-  </div>
+            <div id="search-meta" class="helper-text"></div>
+            <div id="search-results" class="result-list"></div>
+        </section>
 
-  <script src="/static/app.js"></script>
+        <section class="card player-section">
+            <div class="section-head">
+                <h2>Player</h2>
+            </div>
+
+            <div id="player-status" class="player-status">
+                <div class="player-line"><span class="muted">Status</span><strong id="status-text">Leerlauf</strong></div>
+                <div class="player-line"><span class="muted">Titel</span><strong id="status-title">–</strong></div>
+                <div class="player-line"><span class="muted">Fortschritt</span><strong id="status-position">–</strong></div>
+            </div>
+
+            <div class="player-controls">
+                <button id="toggle-play-button" class="control-button accent" title="Play / Pause">
+                    <span class="btn-icon">
+                        <svg id="toggle-play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M8 5v14l11-7z"></path>
+                        </svg>
+                    </span>
+                    <span id="toggle-play-label">Play</span>
+                </button>
+
+                <button id="prev-button" class="control-button" title="Vorheriger Titel">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M19 20L9 12l10-8v16z"></path>
+                            <path d="M5 19V5"></path>
+                        </svg>
+                    </span>
+                    <span>Zurück</span>
+                </button>
+
+                <button id="next-button" class="control-button" title="Nächster Titel">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M5 4l10 8-10 8V4z"></path>
+                            <path d="M19 5v14"></path>
+                        </svg>
+                    </span>
+                    <span>Weiter</span>
+                </button>
+
+                <button id="stop-button" class="control-button" title="Stop">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="6" y="6" width="12" height="12" rx="1"></rect>
+                        </svg>
+                    </span>
+                    <span>Stop</span>
+                </button>
+
+                <button id="shuffle-button" class="control-button" title="Playlist mischen">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M16 3h5v5"></path>
+                            <path d="M4 20l7-7"></path>
+                            <path d="M21 3l-7 7"></path>
+                            <path d="M4 4l7 7"></path>
+                            <path d="M14 14l7 7"></path>
+                        </svg>
+                    </span>
+                    <span>Shuffle</span>
+                </button>
+
+                <button id="clear-queue-button" class="control-button danger" title="Playlist leeren">
+                    <span class="btn-icon">
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="M3 6h18"></path>
+                            <path d="M8 6V4h8v2"></path>
+                            <path d="M19 6l-1 14H6L5 6"></path>
+                        </svg>
+                    </span>
+                    <span>Leeren</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="card queue-section">
+            <div class="section-head">
+                <h2>Wiedergabeliste</h2>
+                <div class="helper-text" id="queue-meta"></div>
+            </div>
+            <div id="queue-list" class="queue-list"></div>
+        </section>
+    </main>
+</div>
+
+<script src="/static/app.js"></script>
 </body>
 </html>

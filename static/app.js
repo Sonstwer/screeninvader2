@@ -1,291 +1,337 @@
 let searchController = null;
 let latestSearchToken = 0;
-let currentSearchToken = 0;
-let isSearchRunning = false;
+let currentQueueState = { queue: [], current_index: -1, current_item: null };
+let currentPlayerState = { playing: false, paused: false, current_item: null };
+
 
 async function apiGet(url, options) {
-  const response = await fetch(url, options || {});
-  return await response.json();
+    const response = await fetch(url, options || {});
+    if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+    }
+    return await response.json();
 }
 
 async function apiPost(url, data) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data || {})
-  });
-  return await response.json();
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data || {})
+    });
+    if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+    }
+    return await response.json();
 }
 
 function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
 }
 
 function formatDuration(seconds) {
-  if (seconds === null || seconds === undefined) {
-    return "";
-  }
+    if (seconds === null || seconds === undefined) {
+        return "–";
+    }
+    const s = Number(seconds);
+    if (Number.isNaN(s)) {
+        return "–";
+    }
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
 
-  const s = Number(seconds);
-  if (Number.isNaN(s)) {
-    return "";
-  }
-
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = Math.floor(s % 60);
-
-  if (h > 0) {
-    return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  }
-
-  return `${m}:${String(sec).padStart(2, "0")}`;
+    if (h > 0) {
+        return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+    }
+    return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
 function setSearchUiState(running, queryText) {
-  const button = document.getElementById("search-button");
-  const input = document.getElementById("search-input");
-  const results = document.getElementById("search-results");
+    const button = document.getElementById("search-button");
+    const meta = document.getElementById("search-meta");
 
-  isSearchRunning = running;
-  button.disabled = running;
+    button.disabled = running;
+    button.querySelector(".btn-label").textContent = running ? "Suche läuft …" : "Suchen";
 
-  if (running) {
-    button.textContent = "Suche läuft ...";
-    if (queryText) {
-      results.innerHTML = `<div class="small">Suche nach: <strong>${escapeHtml(queryText)}</strong></div>`;
+    if (running && queryText) {
+        meta.innerHTML = `Suche nach: <strong>${escapeHtml(queryText)}</strong>`;
+    } else if (!running) {
+        meta.textContent = "";
     }
-  } else {
-    button.disabled = false;
-    button.textContent = "Suchen";
-  }
+}
 
-  input.disabled = false;
+function statusChip(status) {
+    const safe = escapeHtml(status || "queued");
+    return `<span class="status-chip status-${safe}">${safe}</span>`;
 }
 
 function renderSearchResults(results) {
-  const target = document.getElementById("search-results");
+    const container = document.getElementById("search-results");
 
-  if (!results.length) {
-    target.innerHTML = "<div class='small'>Keine Treffer.</div>";
-    return;
-  }
+    if (!results.length) {
+        container.innerHTML = `<div class="empty-state">Keine Treffer.</div>`;
+        return;
+    }
 
-  target.innerHTML = results.map((item) => {
-    const title = escapeHtml(item.title || "Unbekannt");
-    const channel = escapeHtml(item.channel || "");
-    const duration = formatDuration(item.duration);
+    container.innerHTML = results.map((item) => {
+        const title = escapeHtml(item.title || "(ohne Titel)");
+        const channel = escapeHtml(item.channel || "");
+        const duration = formatDuration(item.duration);
+        const thumb = item.thumbnail
+            ? `<img src="${escapeHtml(item.thumbnail)}" alt="">`
+            : "";
 
-    return `
-      <div class="list-item">
-        <div class="title">${title}</div>
-        <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
-        <div class="controls">
-          <button onclick='addToQueue(${JSON.stringify(item)})'>Zur Playlist hinzufügen</button>
-        </div>
-      </div>
-    `;
-  }).join("");
+        return `
+            <div class="result-item">
+                <div class="result-thumb">${thumb}</div>
+                <div class="result-info">
+                    <p class="result-title">${title}</p>
+                    <p class="result-meta">${duration}${channel ? " · " + channel : ""}</p>
+                </div>
+                <div class="result-actions">
+                    <button class="result-action-button" data-add='${JSON.stringify(item).replaceAll("'", "&apos;")}'>Zur Playlist</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+
+    container.querySelectorAll("[data-add]").forEach((button) => {
+        button.addEventListener("click", async function () {
+            const raw = this.getAttribute("data-add").replaceAll("&apos;", "'");
+            await addToQueue(JSON.parse(raw));
+        });
+    });
 }
 
 async function doSearch() {
-  const input = document.getElementById("search-input");
-  const target = document.getElementById("search-results");
-  const query = input.value.trim();
+    const input = document.getElementById("search-input");
+    const resultsDiv = document.getElementById("search-results");
+    const query = (input.value || "").trim();
 
-  if (!query) {
-    target.innerHTML = "";
-    return;
-  }
-
-  // Frühere Suche abbrechen
-  if (searchController) {
-    searchController.abort();
-  }
-
-  searchController = new AbortController();
-  latestSearchToken += 1;
-  const myToken = latestSearchToken;
-  currentSearchToken = myToken;
-
-  setSearchUiState(true, query);
-
-  try {
-    const data = await apiGet(
-      `/api/search?q=${encodeURIComponent(query)}`,
-      { signal: searchController.signal }
-    );
-
-    // Wenn inzwischen schon eine neuere Suche gestartet wurde:
-    if (myToken !== latestSearchToken) {
-      return;
+    if (!query) {
+        resultsDiv.innerHTML = "";
+        return;
     }
 
-    const results = data.results || [];
-    renderSearchResults(results);
-  } catch (err) {
-    // Abgebrochene Suche still ignorieren
-    if (err && err.name === "AbortError") {
-      return;
+    if (searchController) {
+        searchController.abort();
     }
 
-    // Auch hier nur reagieren, wenn das noch die aktuellste Suche ist
-    if (myToken !== latestSearchToken) {
-      return;
-    }
+    searchController = new AbortController();
+    latestSearchToken += 1;
+    const myToken = latestSearchToken;
 
-    target.innerHTML = "<div class='status status-error'>Fehler bei der Suche.</div>";
-  } finally {
-    if (myToken === latestSearchToken) {
-      setSearchUiState(false, "");
+    setSearchUiState(true, query);
+
+    try {
+        const data = await apiGet("/api/search?q=" + encodeURIComponent(query), {
+            signal: searchController.signal
+        });
+
+        if (myToken !== latestSearchToken) {
+            return;
+        }
+
+        renderSearchResults(data.results || []);
+    } catch (err) {
+        if (err && err.name === "AbortError") {
+            return;
+        }
+        if (myToken !== latestSearchToken) {
+            return;
+        }
+        resultsDiv.innerHTML = `<div class="empty-state">Fehler bei der Suche.</div>`;
+    } finally {
+        if (myToken === latestSearchToken) {
+            setSearchUiState(false, "");
+        }
     }
-  }
 }
 
 async function addToQueue(item) {
-  await apiPost("/api/queue/add", item);
-  await refreshQueue();
+    await apiPost("/api/queue/add", {
+        id: item.id,
+        title: item.title,
+        channel: item.channel,
+        duration: item.duration,
+        webpage_url: item.webpage_url
+    });
+    await refreshAll();
 }
 
 async function removeFromQueue(index) {
-  await apiPost("/api/queue/remove", { index: index });
-  await refreshQueue();
-  await refreshPlayerStatus();
+    await apiPost("/api/queue/remove", {index: index});
+    await refreshAll();
 }
 
 async function playIndex(index) {
-  await apiPost("/api/player/play_index", { index: index });
-  await refreshQueue();
-  await refreshPlayerStatus();
+    await apiPost("/api/player/play_index", {index: index});
+    await refreshAll();
 }
 
-async function playerPlay() {
-  await apiPost("/api/player/play", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
-}
-
-async function playerPause() {
-  await apiPost("/api/player/pause", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
-}
-
-async function playerResume() {
-  await apiPost("/api/player/resume", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
+async function togglePlayPause() {
+    await apiPost("/api/player/toggle_pause", {});
+    await refreshAll();
 }
 
 async function playerStop() {
-  await apiPost("/api/player/stop", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
+    await apiPost("/api/player/stop", {});
+    await refreshAll();
 }
 
 async function playerNext() {
-  await apiPost("/api/player/next", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
+    await apiPost("/api/player/next", {});
+    await refreshAll();
 }
 
 async function playerPrevious() {
-  await apiPost("/api/player/previous", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
+    await apiPost("/api/player/previous", {});
+    await refreshAll();
 }
 
 async function clearQueue() {
-  await apiPost("/api/queue/clear", {});
-  await refreshPlayerStatus();
-  await refreshQueue();
+    if (!confirm("Playlist wirklich leeren?")) {
+        return;
+    }
+    await apiPost("/api/queue/clear", {});
+    await refreshAll();
+}
+
+async function shuffleQueue() {
+    await apiPost("/api/queue/shuffle", {});
+    await refreshAll();
+}
+
+function renderQueue(queue, currentIndex) {
+    const container = document.getElementById("queue-list");
+    const meta = document.getElementById("queue-meta");
+
+    meta.textContent = queue.length ? `${queue.length} Einträge` : "";
+
+    if (!queue.length) {
+        container.innerHTML = `<div class="empty-state">Playlist ist leer.</div>`;
+        return;
+    }
+
+    container.innerHTML = queue.map((item, index) => {
+        const title = escapeHtml(item.title || "(ohne Titel)");
+        const channel = escapeHtml(item.channel || "");
+        const duration = formatDuration(item.duration);
+        const status = item.status || "queued";
+        const isCurrent = index === currentIndex;
+        const error = item.error ? `<div class="error-text">${escapeHtml(item.error)}</div>` : "";
+
+        return `
+            <div class="queue-item ${isCurrent ? "current" : ""}">
+                <div class="queue-info">
+                    <p class="queue-title">${isCurrent ? "▶ " : ""}${title}</p>
+                    <p class="queue-meta">${duration}${channel ? " · " + channel : ""}</p>
+                    <div>${statusChip(status)}</div>
+                    ${error}
+                </div>
+                <div class="queue-actions-inline">
+                    <button class="queue-action-button" data-play-index="${index}">Abspielen</button>
+                    <button class="queue-action-button" data-remove-index="${index}">Entfernen</button>
+                </div>
+            </div>
+        `;
+    }).join("");
+
+    container.querySelectorAll("[data-play-index]").forEach((button) => {
+        button.addEventListener("click", async function () {
+            const index = parseInt(this.getAttribute("data-play-index"), 10);
+            await playIndex(index);
+        });
+    });
+
+    container.querySelectorAll("[data-remove-index]").forEach((button) => {
+        button.addEventListener("click", async function () {
+            const index = parseInt(this.getAttribute("data-remove-index"), 10);
+            await removeFromQueue(index);
+        });
+    });
+}
+
+function updateToggleButton() {
+    const label = document.getElementById("toggle-play-label");
+    const icon = document.getElementById("toggle-play-icon");
+
+    if (currentPlayerState.paused) {
+        label.textContent = "Weiter";
+        icon.innerHTML = `<path d="M8 5v14l11-7z"></path>`;
+    } else if (currentPlayerState.playing) {
+        label.textContent = "Pause";
+        icon.innerHTML = `<rect x="7" y="5" width="4" height="14"></rect><rect x="13" y="5" width="4" height="14"></rect>`;
+    } else {
+        label.textContent = "Play";
+        icon.innerHTML = `<path d="M8 5v14l11-7z"></path>`;
+    }
 }
 
 async function refreshQueue() {
-  const target = document.getElementById("queue-list");
-  const data = await apiGet("/api/queue");
-  const queue = data.queue || [];
-  const currentIndex = data.current_index;
-
-  if (!queue.length) {
-    target.innerHTML = "<div class='small'>Playlist ist leer.</div>";
-    return;
-  }
-
-  target.innerHTML = queue.map((item, index) => {
-    const title = escapeHtml(item.title || "Unbekannt");
-    const channel = escapeHtml(item.channel || "");
-    const duration = formatDuration(item.duration);
-    const status = escapeHtml(item.status || "queued");
-    const isCurrent = index === currentIndex;
-    const errorText = item.error ? `<div class="small status-error">${escapeHtml(item.error)}</div>` : "";
-
-    return `
-      <div class="list-item">
-        <div class="title">${isCurrent ? "▶ " : ""}${title}</div>
-        <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
-        <div class="status status-${status}">Status: ${status}</div>
-        ${errorText}
-        <div class="controls">
-          <button onclick="playIndex(${index})">Abspielen</button>
-          <button onclick="removeFromQueue(${index})">Entfernen</button>
-        </div>
-      </div>
-    `;
-  }).join("");
+    const data = await apiGet("/api/queue");
+    currentQueueState = data;
+    renderQueue(data.queue || [], data.current_index);
 }
 
-async function refreshPlayerStatus() {
-  const target = document.getElementById("player-status");
-  const data = await apiGet("/api/player/status");
+async function refreshStatus() {
+    const data = await apiGet("/api/player/status");
+    currentPlayerState = data;
 
-  const currentItem = data.current_item;
-  const title = currentItem && currentItem.title ? escapeHtml(currentItem.title) : "Kein Titel";
-  const state = data.playing ? "Wiedergabe läuft" : (data.paused ? "Pausiert" : "Leerlauf");
+    const statusText = document.getElementById("status-text");
+    const statusTitle = document.getElementById("status-title");
+    const statusPosition = document.getElementById("status-position");
 
-  let html = `<div><strong>Status:</strong> ${state}</div>`;
-
-  if (currentItem) {
-    html += `<div><strong>Titel:</strong> ${title}</div>`;
-    if (currentItem.channel) {
-      html += `<div><strong>Kanal:</strong> ${escapeHtml(currentItem.channel)}</div>`;
+    const currentItem = data.current_item;
+    let state = "Leerlauf";
+    if (data.paused) {
+        state = "Pausiert";
+    } else if (data.playing) {
+        state = "Wiedergabe läuft";
     }
-  }
 
-  if (data.time_pos !== null && data.duration !== null) {
-    html += `<div><strong>Fortschritt:</strong> ${formatDuration(data.time_pos)} / ${formatDuration(data.duration)}</div>`;
-  }
+    statusText.textContent = state;
+    statusTitle.textContent = currentItem && currentItem.title ? currentItem.title : "–";
 
-  target.innerHTML = html;
-}
-
-function bindUi() {
-  document.getElementById("search-button").addEventListener("click", doSearch);
-  document.getElementById("search-input").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") {
-      doSearch();
+    if (data.time_pos !== null && data.duration !== null) {
+        statusPosition.textContent = `${formatDuration(data.time_pos)} / ${formatDuration(data.duration)}`;
+    } else {
+        statusPosition.textContent = "–";
     }
-  });
 
-  document.getElementById("btn-play").addEventListener("click", playerPlay);
-  document.getElementById("btn-pause").addEventListener("click", playerPause);
-  document.getElementById("btn-resume").addEventListener("click", playerResume);
-  document.getElementById("btn-stop").addEventListener("click", playerStop);
-  document.getElementById("btn-prev").addEventListener("click", playerPrevious);
-  document.getElementById("btn-next").addEventListener("click", playerNext);
-  document.getElementById("btn-clear").addEventListener("click", clearQueue);
+    updateToggleButton();
 }
 
 async function refreshAll() {
-  await refreshPlayerStatus();
-  await refreshQueue();
+    try {
+        await refreshStatus();
+        await refreshQueue();
+    } catch (err) {
+        // absichtlich still
+    }
 }
 
-bindUi();
+function setupEventHandlers() {
+    document.getElementById("search-button").addEventListener("click", doSearch);
+    document.getElementById("search-input").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            doSearch();
+        }
+    });
+
+    document.getElementById("toggle-play-button").addEventListener("click", togglePlayPause);
+    document.getElementById("stop-button").addEventListener("click", playerStop);
+    document.getElementById("prev-button").addEventListener("click", playerPrevious);
+    document.getElementById("next-button").addEventListener("click", playerNext);
+    document.getElementById("shuffle-button").addEventListener("click", shuffleQueue);
+    document.getElementById("clear-queue-button").addEventListener("click", clearQueue);
+}
+
+setupEventHandlers();
 refreshAll();
 setInterval(refreshAll, 3000);
