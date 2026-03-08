@@ -1,5 +1,10 @@
-async function apiGet(url) {
-  const response = await fetch(url);
+let searchController = null;
+let latestSearchToken = 0;
+let currentSearchToken = 0;
+let isSearchRunning = false;
+
+async function apiGet(url, options) {
+  const response = await fetch(url, options || {});
   return await response.json();
 }
 
@@ -25,10 +30,12 @@ function formatDuration(seconds) {
   if (seconds === null || seconds === undefined) {
     return "";
   }
+
   const s = Number(seconds);
   if (Number.isNaN(s)) {
     return "";
   }
+
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = Math.floor(s % 60);
@@ -36,7 +43,54 @@ function formatDuration(seconds) {
   if (h > 0) {
     return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
+
   return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+function setSearchUiState(running, queryText) {
+  const button = document.getElementById("search-button");
+  const input = document.getElementById("search-input");
+  const results = document.getElementById("search-results");
+
+  isSearchRunning = running;
+  button.disabled = running;
+
+  if (running) {
+    button.textContent = "Suche läuft ...";
+    if (queryText) {
+      results.innerHTML = `<div class="small">Suche nach: <strong>${escapeHtml(queryText)}</strong></div>`;
+    }
+  } else {
+    button.disabled = false;
+    button.textContent = "Suchen";
+  }
+
+  input.disabled = false;
+}
+
+function renderSearchResults(results) {
+  const target = document.getElementById("search-results");
+
+  if (!results.length) {
+    target.innerHTML = "<div class='small'>Keine Treffer.</div>";
+    return;
+  }
+
+  target.innerHTML = results.map((item) => {
+    const title = escapeHtml(item.title || "Unbekannt");
+    const channel = escapeHtml(item.channel || "");
+    const duration = formatDuration(item.duration);
+
+    return `
+      <div class="list-item">
+        <div class="title">${title}</div>
+        <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
+        <div class="controls">
+          <button onclick='addToQueue(${JSON.stringify(item)})'>Zur Playlist hinzufügen</button>
+        </div>
+      </div>
+    `;
+  }).join("");
 }
 
 async function doSearch() {
@@ -49,34 +103,47 @@ async function doSearch() {
     return;
   }
 
-  target.innerHTML = "Suche läuft ...";
+  // Frühere Suche abbrechen
+  if (searchController) {
+    searchController.abort();
+  }
+
+  searchController = new AbortController();
+  latestSearchToken += 1;
+  const myToken = latestSearchToken;
+  currentSearchToken = myToken;
+
+  setSearchUiState(true, query);
 
   try {
-    const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}`);
-    const results = data.results || [];
+    const data = await apiGet(
+      `/api/search?q=${encodeURIComponent(query)}`,
+      { signal: searchController.signal }
+    );
 
-    if (!results.length) {
-      target.innerHTML = "<div class='small'>Keine Treffer.</div>";
+    // Wenn inzwischen schon eine neuere Suche gestartet wurde:
+    if (myToken !== latestSearchToken) {
       return;
     }
 
-    target.innerHTML = results.map((item) => {
-      const title = escapeHtml(item.title || "Unbekannt");
-      const channel = escapeHtml(item.channel || "");
-      const duration = formatDuration(item.duration);
-
-      return `
-        <div class="list-item">
-          <div class="title">${title}</div>
-          <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
-          <div class="controls">
-            <button onclick='addToQueue(${JSON.stringify(item)})'>Zur Playlist hinzufügen</button>
-          </div>
-        </div>
-      `;
-    }).join("");
+    const results = data.results || [];
+    renderSearchResults(results);
   } catch (err) {
+    // Abgebrochene Suche still ignorieren
+    if (err && err.name === "AbortError") {
+      return;
+    }
+
+    // Auch hier nur reagieren, wenn das noch die aktuellste Suche ist
+    if (myToken !== latestSearchToken) {
+      return;
+    }
+
     target.innerHTML = "<div class='status status-error'>Fehler bei der Suche.</div>";
+  } finally {
+    if (myToken === latestSearchToken) {
+      setSearchUiState(false, "");
+    }
   }
 }
 
