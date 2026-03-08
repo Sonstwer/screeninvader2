@@ -7,122 +7,76 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="wrapper">
-    <header class="topbar">
+<div class="app-shell">
+    <header class="app-header">
         <div>
             <h1>ScreenInvader 2.0</h1>
-            <p>Lokale Audio-Jukebox im Netzwerk</p>
-        </div>
-        <div class="topbar-meta">
-            <span class="chip">Audio only</span>
+            <p>Lokaler Audio-Player mit YouTube-Suche</p>
         </div>
     </header>
 
-    <main class="layout">
-        <section class="card search-section">
-            <div class="section-head">
+    <main class="app-grid">
+        <section class="panel panel-search">
+            <div class="panel-head">
                 <h2>Suche</h2>
             </div>
-
             <div class="search-bar">
-                <input type="text" id="search-input" placeholder="YouTube-Suche oder direkte URL …">
-                <button id="search-button" class="primary-button">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M21 21l-4.35-4.35"></path>
-                            <circle cx="11" cy="11" r="6"></circle>
-                        </svg>
-                    </span>
-                    <span class="btn-label">Suchen</span>
-                </button>
+                <input id="search-input" type="text" placeholder="Suchbegriff oder URL">
+                <button id="search-button" class="btn btn-primary">Suchen</button>
             </div>
-
-            <div id="search-meta" class="helper-text"></div>
-            <div id="search-results" class="result-list"></div>
+            <div id="search-meta" class="small-note"></div>
+            <div id="search-results" class="list"></div>
         </section>
 
-        <section class="card player-section">
-            <div class="section-head">
+        <section class="panel panel-player">
+            <div class="panel-head">
                 <h2>Player</h2>
             </div>
 
             <div id="player-status" class="player-status">
-                <div class="player-line"><span class="muted">Status</span><strong id="status-text">Leerlauf</strong></div>
-                <div class="player-line"><span class="muted">Titel</span><strong id="status-title">–</strong></div>
-                <div class="player-line"><span class="muted">Fortschritt</span><strong id="status-position">–</strong></div>
+                <div><strong>Status:</strong> <span id="status-text">Leerlauf</span></div>
+                <div><strong>Titel:</strong> <span id="status-title">–</span></div>
+                <div><strong>Position:</strong> <span id="status-position">–</span></div>
             </div>
 
             <div class="player-controls">
-                <button id="toggle-play-button" class="control-button accent" title="Play / Pause">
-                    <span class="btn-icon">
-                        <svg id="toggle-play-icon" viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M8 5v14l11-7z"></path>
-                        </svg>
-                    </span>
-                    <span id="toggle-play-label">Play</span>
+                <button id="toggle-button" class="icon-btn accent-green" title="Play / Pause">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+                    <span id="toggle-button-label">Play</span>
                 </button>
 
-                <button id="prev-button" class="control-button" title="Vorheriger Titel">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M19 20L9 12l10-8v16z"></path>
-                            <path d="M5 19V5"></path>
-                        </svg>
-                    </span>
-                    <span>Zurück</span>
+                <button id="prev-button" class="icon-btn" title="Vorheriger Titel">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h2v12H6zM18 6v12L9 12z"/></svg>
+                    <span>Prev</span>
                 </button>
 
-                <button id="next-button" class="control-button" title="Nächster Titel">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M5 4l10 8-10 8V4z"></path>
-                            <path d="M19 5v14"></path>
-                        </svg>
-                    </span>
-                    <span>Weiter</span>
+                <button id="next-button" class="icon-btn" title="Nächster Titel">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 6h2v12h-2zM6 18V6l9 6z"/></svg>
+                    <span>Next</span>
                 </button>
 
-                <button id="stop-button" class="control-button" title="Stop">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="6" y="6" width="12" height="12" rx="1"></rect>
-                        </svg>
-                    </span>
+                <button id="stop-button" class="icon-btn accent-red" title="Stop">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"/></svg>
                     <span>Stop</span>
                 </button>
 
-                <button id="shuffle-button" class="control-button" title="Playlist mischen">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M16 3h5v5"></path>
-                            <path d="M4 20l7-7"></path>
-                            <path d="M21 3l-7 7"></path>
-                            <path d="M4 4l7 7"></path>
-                            <path d="M14 14l7 7"></path>
-                        </svg>
-                    </span>
+                <button id="shuffle-button" class="icon-btn accent-purple" title="Shuffle">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5h-2V6.41l-4.29 4.3-1.42-1.42L17.59 5H16V3zM4 7h4l3 3-1.5 1.5L7.38 9H4V7zm9.79 5.79 1.42 1.42L11 18.41l1.59 1.59L11 21.59 7.41 18 11 14.41l1.59 1.59 1.2-1.21zM17.59 19l-4.3-4.29 1.42-1.42L19 17.59V16h2v5h-5v-2h1.59z"/></svg>
                     <span>Shuffle</span>
                 </button>
 
-                <button id="clear-queue-button" class="control-button danger" title="Playlist leeren">
-                    <span class="btn-icon">
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <path d="M3 6h18"></path>
-                            <path d="M8 6V4h8v2"></path>
-                            <path d="M19 6l-1 14H6L5 6"></path>
-                        </svg>
-                    </span>
+                <button id="clear-button" class="icon-btn" title="Playlist leeren">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9z"/></svg>
                     <span>Leeren</span>
                 </button>
             </div>
         </section>
 
-        <section class="card queue-section">
-            <div class="section-head">
-                <h2>Wiedergabeliste</h2>
-                <div class="helper-text" id="queue-meta"></div>
+        <section class="panel panel-queue">
+            <div class="panel-head">
+                <h2>Playlist</h2>
             </div>
-            <div id="queue-list" class="queue-list"></div>
+            <div id="queue-list" class="list"></div>
         </section>
     </main>
 </div>

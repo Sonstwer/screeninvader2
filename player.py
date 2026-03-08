@@ -15,7 +15,6 @@ class MPVPlayer:
         self.command = command if command is not None else MPV_COMMAND
         self._process = None  # type: Optional[subprocess.Popen]
         self._lock = threading.Lock()
-        self._idle_visible = False
 
     def _get_ip_text(self) -> Optional[str]:
         try:
@@ -33,17 +32,17 @@ class MPVPlayer:
             return (
                 "ScreenInvader 2.0\n"
                 "http://{}:5000/\n\n"
-                "Tastatur: Strg+Alt+F1 = Terminal, Strg+Alt+F3 = Player"
+                "Terminal: Strg+Alt+F1\n"
+                "Player: Strg+Alt+F3"
             ).format(ip_text)
         return "ScreenInvader 2.0"
 
     def _build_command(self) -> list:
         cmd = list(self.command)
 
-        # Audio-Ausgabe wählen
-        # Bei deinem Board:
-        #   HDMI   = hw:0,0
-        #   Analog = hw:1,0
+        # Bei deinem Banana Pi:
+        # HDMI   = hw:0,0
+        # Analog = hw:1,0
         ao = (AUDIO_OUTPUT or "hdmi").lower()
         if ao == "analog":
             cmd.append("--audio-device=alsa/hw:1,0")
@@ -80,7 +79,7 @@ class MPVPlayer:
     def _send_raw_command(self, command: Any) -> Optional[Dict]:
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.settimeout(1.0)
+            s.settimeout(1.5)
             s.connect(self.socket_path)
             payload = json.dumps({"command": command}) + "\n"
             s.sendall(payload.encode("utf-8"))
@@ -114,32 +113,23 @@ class MPVPlayer:
         return None
 
     def show_idle_overlay(self) -> None:
-        text = self._idle_overlay_text()
-        self._send_command(["set_property", "osd-level", 3])
-        self._send_command(["show-text", text, 999999, 0])
-        self._idle_visible = True
+        self._send_raw_command(["set_property", "osd-level", 3])
+        self._send_raw_command(["show-text", self._idle_overlay_text(), 999999, 0])
 
     def clear_idle_overlay(self) -> None:
-        self._send_command(["show-text", "", 1, 0])
-        self._idle_visible = False
+        self._send_raw_command(["show-text", "", 1, 0])
 
-    def play_url(self, url: str, start_time: Optional[float] = None) -> None:
+    def play_url(self, url: str, start_pos: Optional[float] = None) -> None:
         self.clear_idle_overlay()
         self._send_command(["loadfile", url, "replace"])
-        if start_time is not None and start_time > 0:
-            def _resume_seek():
-                time.sleep(1.0)
-                self._send_raw_command(["seek", float(start_time), "absolute"])
-            threading.Thread(target=_resume_seek, daemon=True).start()
+        if start_pos is not None and float(start_pos) > 0.5:
+            time.sleep(0.8)
+            self._send_command(["set_property", "time-pos", float(start_pos)])
 
     def stop(self) -> None:
         self._send_command(["stop"])
         time.sleep(0.2)
         self.show_idle_overlay()
-
-    def pause_hard(self) -> None:
-        """Stabile 'Pause' für Audio-only: Stop plus Overlay."""
-        self.stop()
 
     def is_idle(self) -> bool:
         value = self._get_property("idle-active")
@@ -169,7 +159,7 @@ class MPVPlayer:
             status["duration"] = duration
             status["playing"] = not bool(idle)
 
-            if bool(idle) and not self._idle_visible:
+            if bool(idle):
                 self.show_idle_overlay()
         except Exception:
             pass

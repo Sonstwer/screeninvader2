@@ -2,11 +2,11 @@ import threading
 import time
 import traceback
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 from config import HOST, PORT, QUEUE_FILE
-from queue_manager import QueueManager
 from player import MPVPlayer
+from queue_manager import QueueManager
 from yt_wrapper import YTDLPWrapper
 
 app = Flask(__name__)
@@ -17,15 +17,11 @@ yt = YTDLPWrapper()
 
 _playback_worker_started = False
 _manual_stop_requested = False
-_last_started_index = -1
 
-# Such-Cache:
-# - Key: normalisierter Suchstring
-# - Value: {"timestamp": <unix>, "results": [...]}
 _search_cache = {}
 _search_cache_lock = threading.Lock()
-_search_cache_ttl_seconds = 180
-_search_cache_max_entries = 50
+_search_cache_ttl_seconds = 300
+_search_cache_max_entries = 100
 
 
 def _normalize_search_query(query: str) -> str:
@@ -38,18 +34,14 @@ def _get_cached_search(query: str):
         return None
 
     now = time.time()
-
     with _search_cache_lock:
         entry = _search_cache.get(key)
         if not entry:
             return None
-
-        age = now - entry.get("timestamp", 0)
-        if age > _search_cache_ttl_seconds:
+        if (now - entry["timestamp"]) > _search_cache_ttl_seconds:
             _search_cache.pop(key, None)
             return None
-
-        return entry.get("results")
+        return entry["results"]
 
 
 def _set_cached_search(query: str, results):
@@ -58,31 +50,54 @@ def _set_cached_search(query: str, results):
         return
 
     now = time.time()
-
     with _search_cache_lock:
         _search_cache[key] = {
             "timestamp": now,
             "results": results,
         }
 
-        # Alte Einträge entfernen
-        expired_keys = []
-        for k, entry in _search_cache.items():
-            if (now - entry.get("timestamp", 0)) > _search_cache_ttl_seconds:
-                expired_keys.append(k)
+        expired = []
+        for cache_key, entry in _search_cache.items():
+            if (now - entry["timestamp"]) > _search_cache_ttl_seconds:
+                expired.append(cache_key)
 
-        for k in expired_keys:
-            _search_cache.pop(k, None)
+        for cache_key in expired:
+            _search_cache.pop(cache_key, None)
 
-        # Wenn zu groß: älteste Einträge entfernen
         if len(_search_cache) > _search_cache_max_entries:
             sorted_items = sorted(
                 _search_cache.items(),
-                key=lambda item: item[1].get("timestamp", 0)
+                key=lambda item: item[1]["timestamp"]
             )
             while len(sorted_items) > _search_cache_max_entries:
                 oldest_key, _ = sorted_items.pop(0)
                 _search_cache.pop(oldest_key, None)
+
+
+def _play_current_item(start_pos: float = 0.0):
+    current_item = queue_manager.get_current_item()
+    if current_item is None:
+        return False, "Kein aktueller Eintrag"
+
+    url = current_item.get("webpage_url")
+    if not url:
+        queue_manager.mark_current_status("error", "missing_webpage_url")
+        return False, "missing_webpage_url"
+
+    try:
+        stream_url = yt.get_stream_url(url)
+        if not stream_url:
+            queue_manager.mark_current_status("error", "Keine Stream-URL ermittelbar")
+            return False, "no_stream_url"
+
+        player.play_url(stream_url, start_pos=start_pos)
+        queue_manager.mark_current_status("playing")
+        return True, None
+    except Exception as e:
+        print("Playback error:", str(e))
+        traceback.print_exc()
+        queue_manager.mark_current_status("error", str(e))
+        return False, str(e)
 
 
 @app.route("/")
@@ -142,9 +157,8 @@ def api_add_queue():
 
 @app.route("/api/queue/clear", methods=["POST"])
 def api_clear_queue():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
     _manual_stop_requested = True
-    _last_started_index = -1
     queue_manager.clear()
     player.stop()
     return jsonify({"status": "ok"})
@@ -173,122 +187,121 @@ def api_remove_from_queue():
 @app.route("/api/player/status", methods=["GET"])
 def api_player_status():
     status = player.get_status()
+    current_item = queue_manager.get_current_item()
     status["queue_size"] = queue_manager.size()
     status["current_index"] = queue_manager.get_current_index()
-    status["current_item"] = queue_manager.get_current_item()
+    status["current_item"] = current_item
+
+    if current_item and current_item.get("status") == "paused":
+        status["paused"] = True
+        status["playing"] = False
+
     return jsonify(status)
 
 
 @app.route("/api/player/play", methods=["POST"])
 def api_player_play():
     global _manual_stop_requested
+
+    if queue_manager.size() == 0:
+        return jsonify({"error": "queue_empty"}), 400
+
+    if queue_manager.get_current_item() is None:
+        queue_manager.set_current_index(0)
+
     _manual_stop_requested = False
+    paused_position = queue_manager.get_paused_position()
+    ok, error = _play_current_item(start_pos=paused_position)
 
-    current = queue_manager.get_current_item()
-    if current is None and queue_manager.size() > 0:
-        queue_manager.set_current_index(0, playing=False)
-
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/player/pause", methods=["POST"])
-def api_player_pause():
-    """
-    Stabilerer Workaround für Streaming-Quellen:
-    statt mpv-internem Pause-State stoppen wir das Playback
-    und markieren den aktuellen Eintrag als paused.
-    """
-    global _manual_stop_requested, _last_started_index
-
-    try:
-        _manual_stop_requested = True
-        _last_started_index = -1
-        player.stop()
-        queue_manager.mark_current_paused()
+    if ok:
+        queue_manager.clear_paused_position()
         return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"error": "pause_failed", "details": str(e)}), 500
 
-
-@app.route("/api/player/resume", methods=["POST"])
-def api_player_resume():
-    global _manual_stop_requested, _last_started_index
-
-    try:
-        _manual_stop_requested = False
-        _last_started_index = -1
-        player.set_pause(False)
-        current_index = queue_manager.get_current_index()
-        if current_index >= 0:
-            queue_manager.set_current_index(current_index, playing=False)
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"error": "resume_failed", "details": str(e)}), 500
+    return jsonify({"error": "play_failed", "details": error}), 500
 
 
 @app.route("/api/player/toggle", methods=["POST"])
 def api_player_toggle():
-    """
-    Ein einziger Button:
-    - läuft etwas -> pausieren (Stop + Status paused)
-    - sonst -> resumieren / starten
-    """
-    try:
-        status = player.get_status()
-        if status.get("playing"):
-            return api_player_pause()
-        return api_player_resume()
-    except Exception as e:
-        return jsonify({"error": "toggle_failed", "details": str(e)}), 500
+    global _manual_stop_requested
+
+    current_item = queue_manager.get_current_item()
+    if current_item is None and queue_manager.size() > 0:
+        queue_manager.set_current_index(0)
+        current_item = queue_manager.get_current_item()
+
+    if current_item is None:
+        return jsonify({"error": "queue_empty"}), 400
+
+    current_status = current_item.get("status")
+    current_player_status = player.get_status()
+
+    if current_player_status.get("playing"):
+        pos = current_player_status.get("time_pos") or 0.0
+        queue_manager.set_paused_position(pos)
+        _manual_stop_requested = True
+        player.stop()
+        queue_manager.mark_current_status("paused")
+        return jsonify({"status": "paused", "position": pos})
+
+    _manual_stop_requested = False
+    start_pos = queue_manager.get_paused_position() if current_status == "paused" else 0.0
+    ok, error = _play_current_item(start_pos=start_pos)
+    if ok:
+        queue_manager.clear_paused_position()
+        return jsonify({"status": "playing"})
+    return jsonify({"error": "resume_failed", "details": error}), 500
 
 
 @app.route("/api/player/stop", methods=["POST"])
 def api_player_stop():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
     _manual_stop_requested = True
-    _last_started_index = -1
-    try:
-        player.stop()
-        current_index = queue_manager.get_current_index()
-        if current_index >= 0:
-            queue_manager.set_current_index(current_index, playing=False)
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        return jsonify({"error": "stop_failed", "details": str(e)}), 500
+    player.stop()
+    queue_manager.clear_paused_position()
+    if queue_manager.get_current_item() is not None:
+        queue_manager.mark_current_status("queued")
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/player/next", methods=["POST"])
 def api_player_next():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
     _manual_stop_requested = False
-    _last_started_index = -1
+
+    player.stop()
+    queue_manager.clear_paused_position()
 
     next_idx = queue_manager.next_index()
     if next_idx == -1:
-        player.stop()
         return jsonify({"status": "end_of_queue"})
 
-    player.stop()
-    return jsonify({"status": "ok", "current_index": next_idx})
+    ok, error = _play_current_item(start_pos=0.0)
+    if ok:
+        return jsonify({"status": "ok", "current_index": next_idx})
+    return jsonify({"error": "next_failed", "details": error}), 500
 
 
 @app.route("/api/player/previous", methods=["POST"])
 def api_player_previous():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
     _manual_stop_requested = False
-    _last_started_index = -1
+
+    player.stop()
+    queue_manager.clear_paused_position()
 
     prev_idx = queue_manager.previous_index()
     if prev_idx == -1:
         return jsonify({"status": "start_of_queue"})
 
-    player.stop()
-    return jsonify({"status": "ok", "current_index": prev_idx})
+    ok, error = _play_current_item(start_pos=0.0)
+    if ok:
+        return jsonify({"status": "ok", "current_index": prev_idx})
+    return jsonify({"error": "previous_failed", "details": error}), 500
 
 
 @app.route("/api/player/play_index", methods=["POST"])
 def api_player_play_index():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
     data = request.get_json(force=True, silent=True) or {}
     index = data.get("index")
 
@@ -300,53 +313,28 @@ def api_player_play_index():
     except ValueError:
         return jsonify({"error": "invalid_index"}), 400
 
-    ok = queue_manager.set_current_index(index, playing=False)
+    ok = queue_manager.set_current_index(index)
     if not ok:
         return jsonify({"error": "index_out_of_range"}), 400
 
     _manual_stop_requested = False
-    _last_started_index = -1
     player.stop()
-    return jsonify({"status": "ok", "current_index": index})
+    queue_manager.clear_paused_position()
+
+    ok, error = _play_current_item(start_pos=0.0)
+    if ok:
+        return jsonify({"status": "ok", "current_index": index})
+    return jsonify({"error": "play_index_failed", "details": error}), 500
 
 
 @app.route("/api/player/shuffle", methods=["POST"])
 def api_player_shuffle():
-    data = queue_manager.get_queue()
-    current_index = queue_manager.get_current_index()
-
-    if not data or len(data) < 2:
-        return jsonify({"status": "ok", "message": "nothing_to_shuffle"})
-
-    import random
-
-    current_item = None
-    if 0 <= current_index < len(data):
-        current_item = data[current_index]
-
-    remaining = data[:]
-    if current_item is not None:
-        remaining.pop(current_index)
-
-    random.shuffle(remaining)
-
-    if current_item is not None:
-        new_queue = [current_item] + remaining
-        new_current_index = 0
-    else:
-        new_queue = remaining
-        new_current_index = 0 if new_queue else -1
-
-    # Direkt in queue.json schreiben über QueueManager-Interna
-    queue_manager._queue = new_queue
-    queue_manager._current_index = new_current_index
-    queue_manager._save()
-
-    return jsonify({"status": "ok"})
+    ok = queue_manager.shuffle_keep_current()
+    return jsonify({"status": "ok", "changed": ok})
 
 
 def playback_worker():
-    global _manual_stop_requested, _last_started_index
+    global _manual_stop_requested
 
     while True:
         try:
@@ -354,45 +342,19 @@ def playback_worker():
                 time.sleep(1.0)
                 continue
 
-            current_index, current_item = queue_manager.current_stream_target()
-
+            current_item = queue_manager.get_current_item()
             if current_item is None:
                 time.sleep(1.0)
                 continue
 
-            if _manual_stop_requested:
-                time.sleep(1.0)
-                continue
+            if current_item.get("status") == "playing" and not _manual_stop_requested:
+                queue_manager.mark_current_status("done")
+                queue_manager.clear_paused_position()
 
-            if current_index == _last_started_index and current_item.get("status") in ("done", "error"):
-                time.sleep(1.0)
-                continue
-
-            url = current_item.get("webpage_url")
-            if not url:
-                queue_manager.mark_current_error("missing_webpage_url")
-                time.sleep(1.0)
-                continue
-
-            try:
-                stream_url = yt.get_stream_url(url)
-                if not stream_url:
-                    queue_manager.mark_current_error("Keine Stream-URL ermittelbar")
-                    time.sleep(1.0)
-                    continue
-
-                player.play_url(stream_url)
-                queue_manager.mark_current_playing()
-                _last_started_index = current_index
-
-                time.sleep(2.0)
-
-                if not player.is_playing():
-                    queue_manager.mark_current_error("Playback start failed")
-            except Exception as e:
-                print("Playback error:", str(e))
-                traceback.print_exc()
-                queue_manager.mark_current_error(str(e))
+                next_idx = queue_manager.next_index()
+                if next_idx != -1:
+                    _manual_stop_requested = False
+                    _play_current_item(start_pos=0.0)
 
             time.sleep(1.0)
         except Exception as e:
