@@ -17,6 +17,7 @@ yt = YTDLPWrapper()
 
 _playback_worker_started = False
 _manual_stop_requested = False
+_last_play_start_ts = 0.0
 
 _search_cache = {}
 _search_cache_lock = threading.Lock()
@@ -75,6 +76,8 @@ def _set_cached_search(query: str, results):
 
 
 def _play_current_item(start_pos: float = 0.0):
+    global _last_play_start_ts
+
     current_item = queue_manager.get_current_item()
     if current_item is None:
         return False, "Kein aktueller Eintrag"
@@ -92,6 +95,7 @@ def _play_current_item(start_pos: float = 0.0):
 
         player.play_url(stream_url, start_pos=start_pos)
         queue_manager.mark_current_status("playing")
+        _last_play_start_ts = time.time()
         return True, None
     except Exception as e:
         print("Playback error:", str(e))
@@ -186,15 +190,20 @@ def api_remove_from_queue():
 
 @app.route("/api/player/status", methods=["GET"])
 def api_player_status():
-    status = player.get_status()
+    raw_status = player.get_status()
     current_item = queue_manager.get_current_item()
+    queue_status = current_item.get("status") if current_item else "idle"
+
+    status = dict(raw_status)
     status["queue_size"] = queue_manager.size()
     status["current_index"] = queue_manager.get_current_index()
     status["current_item"] = current_item
 
-    if current_item and current_item.get("status") == "paused":
-        status["paused"] = True
-        status["playing"] = False
+    status["playing"] = queue_status == "playing"
+    status["paused"] = queue_status == "paused"
+
+    if current_item and not status.get("title"):
+        status["title"] = current_item.get("title")
 
     return jsonify(status)
 
@@ -233,10 +242,10 @@ def api_player_toggle():
         return jsonify({"error": "queue_empty"}), 400
 
     current_status = current_item.get("status")
-    current_player_status = player.get_status()
 
-    if current_player_status.get("playing"):
-        pos = current_player_status.get("time_pos") or 0.0
+    if current_status == "playing":
+        raw_status = player.get_status()
+        pos = raw_status.get("time_pos") or 0.0
         queue_manager.set_paused_position(pos)
         _manual_stop_requested = True
         player.stop()
@@ -246,9 +255,11 @@ def api_player_toggle():
     _manual_stop_requested = False
     start_pos = queue_manager.get_paused_position() if current_status == "paused" else 0.0
     ok, error = _play_current_item(start_pos=start_pos)
+
     if ok:
         queue_manager.clear_paused_position()
         return jsonify({"status": "playing"})
+
     return jsonify({"error": "resume_failed", "details": error}), 500
 
 
@@ -334,27 +345,27 @@ def api_player_shuffle():
 
 
 def playback_worker():
-    global _manual_stop_requested
+    global _manual_stop_requested, _last_play_start_ts
 
     while True:
         try:
-            if player.is_playing():
-                time.sleep(1.0)
-                continue
-
             current_item = queue_manager.get_current_item()
             if current_item is None:
                 time.sleep(1.0)
                 continue
 
-            if current_item.get("status") == "playing" and not _manual_stop_requested:
-                queue_manager.mark_current_status("done")
-                queue_manager.clear_paused_position()
+            current_status = current_item.get("status")
 
-                next_idx = queue_manager.next_index()
-                if next_idx != -1:
-                    _manual_stop_requested = False
-                    _play_current_item(start_pos=0.0)
+            if current_status == "playing":
+                enough_time_passed = (time.time() - _last_play_start_ts) > 5.0
+                if enough_time_passed and not player.is_playing():
+                    queue_manager.mark_current_status("done")
+                    queue_manager.clear_paused_position()
+
+                    next_idx = queue_manager.next_index()
+                    if next_idx != -1:
+                        _manual_stop_requested = False
+                        _play_current_item(start_pos=0.0)
 
             time.sleep(1.0)
         except Exception as e:

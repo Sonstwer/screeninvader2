@@ -21,15 +21,6 @@ async function apiPost(url, data) {
     return await response.json();
 }
 
-function escapeHtml(value) {
-    return String(value || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
-}
-
 function formatDuration(seconds) {
     if (seconds === null || seconds === undefined) {
         return "–";
@@ -43,9 +34,9 @@ function formatDuration(seconds) {
     const sec = s % 60;
 
     if (h > 0) {
-        return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+        return String(h) + ":" + String(m).padStart(2, "0") + ":" + String(sec).padStart(2, "0");
     }
-    return `${m}:${String(sec).padStart(2, "0")}`;
+    return String(m) + ":" + String(sec).padStart(2, "0");
 }
 
 function setSearchState(running, queryText) {
@@ -56,7 +47,7 @@ function setSearchState(running, queryText) {
     button.textContent = running ? "Suche läuft ..." : "Suchen";
 
     if (running && queryText) {
-        meta.textContent = `Suche nach: ${queryText}`;
+        meta.textContent = "Suche nach: " + queryText;
     } else {
         meta.textContent = "";
     }
@@ -129,7 +120,7 @@ function renderSearchResults(results) {
 
     const fragment = document.createDocumentFragment();
 
-    results.forEach((item) => {
+    results.forEach(function (item) {
         const card = document.createElement("div");
         card.className = "card";
 
@@ -151,7 +142,7 @@ function renderSearchResults(results) {
         const actions = document.createElement("div");
         actions.className = "card-actions";
 
-        const addButton = createMiniButton("Zur Playlist", "mini-btn primary", async () => {
+        const addButton = createMiniButton("Zur Playlist", "mini-btn primary", async function () {
             await addToQueue(item);
         });
 
@@ -232,7 +223,7 @@ async function refreshQueue() {
 
     const fragment = document.createDocumentFragment();
 
-    queue.forEach((item, index) => {
+    queue.forEach(function (item, index) {
         const card = document.createElement("div");
         card.className = "card";
         if (index === currentIndex) {
@@ -255,17 +246,17 @@ async function refreshQueue() {
         meta.textContent = parts.join(" • ");
 
         const status = document.createElement("div");
-        status.className = "card-status status-" + escapeHtml(item.status || "queued");
+        status.className = "card-status status-" + (item.status || "queued");
         status.textContent = "Status: " + (item.status || "queued");
 
         const actions = document.createElement("div");
         actions.className = "card-actions";
 
-        const playButton = createMiniButton("Abspielen", "mini-btn primary", async () => {
+        const playButton = createMiniButton("Abspielen", "mini-btn primary", async function () {
             await playIndex(index);
         });
 
-        const removeButton = createMiniButton("Entfernen", "mini-btn", async () => {
+        const removeButton = createMiniButton("Entfernen", "mini-btn", async function () {
             await removeFromQueue(index);
         });
 
@@ -304,7 +295,7 @@ async function refreshPlayerStatus() {
     if (queueStatus === "paused") {
         statusText.textContent = "Pausiert";
         toggleButtonLabel.textContent = "Resume";
-    } else if (data.playing) {
+    } else if (queueStatus === "playing") {
         statusText.textContent = "Wiedergabe läuft";
         toggleButtonLabel.textContent = "Pause";
     } else {
@@ -315,9 +306,9 @@ async function refreshPlayerStatus() {
     statusTitle.textContent = currentItem && currentItem.title ? currentItem.title : "–";
 
     if (data.time_pos !== null && data.duration !== null) {
-        statusPosition.textContent = `${formatDuration(data.time_pos)} / ${formatDuration(data.duration)}`;
+        statusPosition.textContent = formatDuration(data.time_pos) + " / " + formatDuration(data.duration);
     } else if (currentItem && currentItem.duration !== null && currentItem.duration !== undefined) {
-        statusPosition.textContent = `0:00 / ${formatDuration(currentItem.duration)}`;
+        statusPosition.textContent = "0:00 / " + formatDuration(currentItem.duration);
     } else {
         statusPosition.textContent = "–";
     }
