@@ -7,25 +7,26 @@ Wants=network-online.target
 Type=simple
 User=screeninvader
 Group=screeninvader
-
 WorkingDirectory=/opt/screeninvader2
 
-# mpv auf TTY3 ausführen – TTY1 bleibt für Terminal nutzbar
 TTYPath=/dev/tty3
 StandardInput=tty
 StandardOutput=tty
 StandardError=tty
 
-# kleine Verzögerung, damit beim Boot kurz ein Terminal sichtbar bleibt
 ExecStartPre=/bin/sleep 3
+ExecStartPre=-/usr/bin/pkill -9 -u screeninvader mpv
+ExecStartPre=-/bin/rm -f /tmp/screeninvader2_mpv.sock
 
-# Python-Server im venv starten (mpv wird von server.py / player.py gesteuert)
 ExecStart=/opt/screeninvader2/.venv/bin/python server.py
 
 Restart=always
 RestartSec=2
+KillMode=control-group
+TimeoutStopSec=8
+ExecStopPost=-/usr/bin/pkill -9 -u screeninvader mpv
+ExecStopPost=-/bin/rm -f /tmp/screeninvader2_mpv.sock
 
-# Zugriff auf TTY-Konfiguration (für mpv auf separatem TTY)
 AmbientCapabilities=CAP_SYS_TTY_CONFIG
 
 [Install]

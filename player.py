@@ -14,7 +14,8 @@ class MPVPlayer:
         self.socket_path = socket_path
         self.command = command if command is not None else MPV_COMMAND
         self.log_path = log_path
-        self._process = None  # type: Optional[subprocess.Popen]
+        self.runtime_dir = "/tmp/screeninvader-xdg"
+        self._process = None
         self._lock = threading.Lock()
         self._log_handle = None
 
@@ -42,16 +43,28 @@ class MPVPlayer:
     def _build_command(self) -> list:
         cmd = list(self.command)
 
-        # Bei deinem Banana Pi:
-        # HDMI   = hw:0,0
-        # Analog = hw:1,0
+        # Banana Pi:
+        # HDMI   -> sun4ihdmi
+        # Analog -> sun4icodec
         ao = (AUDIO_OUTPUT or "hdmi").lower()
         if ao == "analog":
-            cmd.append("--audio-device=alsa/hw:1,0")
+            device = "alsa/plughw:CARD=sun4icodec,DEV=0"
         else:
-            cmd.append("--audio-device=alsa/hw:0,0")
+            device = "alsa/plughw:CARD=sun4ihdmi,DEV=0"
 
+        cmd.append("--ao=alsa")
+        cmd.append("--audio-device={}".format(device))
         return cmd
+
+    def _build_env(self) -> dict:
+        env = dict(os.environ)
+        os.makedirs(self.runtime_dir, exist_ok=True)
+        try:
+            os.chmod(self.runtime_dir, 0o700)
+        except Exception:
+            pass
+        env["XDG_RUNTIME_DIR"] = self.runtime_dir
+        return env
 
     def _ensure_log_ready(self) -> None:
         log_dir = os.path.dirname(self.log_path)
@@ -87,6 +100,7 @@ class MPVPlayer:
                 self._build_command(),
                 stdout=subprocess.DEVNULL,
                 stderr=self._log_handle,
+                env=self._build_env(),
             )
 
             for _ in range(80):
