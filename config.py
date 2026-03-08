@@ -15,7 +15,7 @@ MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 # Standard-Audioausgabe:
 #   "hdmi"   -> HDMI-Ausgang
 #   "analog" -> 3,5mm-Klinke
-AUDIO_OUTPUT = "analog" 
+AUDIO_OUTPUT = "hdmi"
 
 # mpv-Startbefehl – Audio-only
 MPV_COMMAND = [
