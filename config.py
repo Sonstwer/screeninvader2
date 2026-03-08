@@ -41,14 +41,12 @@ YTDLP_SEARCH_OPTS = {
 }
 
 # WICHTIG:
-# Für dieses Gerät zuerst progressive, robuste Formate bevorzugen:
-# - 18  = 360p MP4 mit Audio
-# - 140 = m4a audio only
-# - 139 = m4a low audio
-# Erst danach generische Audioformate
+# Nicht mehr zuerst "18" erzwingen.
+# Auf diesem Banana Pi lieber zuerst direkte Audioformate,
+# weil genau diese Abspielart lokal schon funktioniert hat.
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,
     "forceipv4": True,
-    "format": "18/140/139/bestaudio[ext=m4a]/bestaudio/best",
+    "format": "140/139/bestaudio[ext=m4a]/bestaudio/best",
 }
