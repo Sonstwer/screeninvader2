@@ -4,7 +4,7 @@ import socket
 import subprocess
 import threading
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from config import MPV_SOCKET_PATH, MPV_COMMAND, AUDIO_OUTPUT, MPV_LOG_PATH
 
@@ -43,17 +43,10 @@ class MPVPlayer:
     def _build_command(self) -> list:
         cmd = list(self.command)
 
-        # Banana Pi:
-        # HDMI   -> sun4ihdmi
-        # Analog -> sun4icodec
-        ao = (AUDIO_OUTPUT or "hdmi").lower()
-        if ao == "analog":
-            device = "alsa/plughw:CARD=sun4icodec,DEV=0"
-        else:
-            device = "alsa/plughw:CARD=sun4ihdmi,DEV=0"
-
+        # Nicht mehr manuell einen geratenen ALSA-Gerätenamen setzen.
+        # Stattdessen nur den ALSA-AO erzwingen und das echte Device
+        # später aus audio-device-list auswählen.
         cmd.append("--ao=alsa")
-        cmd.append("--audio-device={}".format(device))
         return cmd
 
     def _build_env(self) -> dict:
@@ -78,6 +71,14 @@ class MPVPlayer:
         try:
             self._ensure_log_ready()
             line = "\n===== {} =====\n".format(text)
+            self._log_handle.write(line.encode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+
+    def _write_log_line(self, text: str) -> None:
+        try:
+            self._ensure_log_ready()
+            line = "{}\n".format(text)
             self._log_handle.write(line.encode("utf-8", errors="ignore"))
         except Exception:
             pass
@@ -119,7 +120,7 @@ class MPVPlayer:
             payload = json.dumps({"command": command}) + "\n"
             s.sendall(payload.encode("utf-8"))
             try:
-                data = s.recv(4096)
+                data = s.recv(8192)
                 if not data:
                     s.close()
                     return None
@@ -147,6 +148,81 @@ class MPVPlayer:
             return response.get("data")
         return None
 
+    def _set_property(self, prop: str, value: Any) -> Optional[Dict]:
+        self._ensure_mpv_running()
+        return self._send_raw_command(["set_property", prop, value])
+
+    def _get_audio_device_list(self) -> List[Dict]:
+        data = self._get_property("audio-device-list")
+        if isinstance(data, list):
+            return data
+        return []
+
+    def _pick_audio_device_name(self, devices: List[Dict], wanted_output: str) -> Optional[str]:
+        wanted = (wanted_output or "hdmi").lower()
+
+        normalized = []
+        for item in devices:
+            name = str(item.get("name") or "")
+            description = str(item.get("description") or "")
+            combined = (name + " " + description).lower()
+            normalized.append(
+                {
+                    "name": name,
+                    "description": description,
+                    "combined": combined,
+                }
+            )
+
+        # Erst genaue Treffer nach Beschreibung / Name
+        if wanted == "analog":
+            keywords = ["codec", "analog", "sun4icodec", "sun4i-codec"]
+        else:
+            keywords = ["hdmi", "sun4ihdmi", "sun4i-hdmi"]
+
+        for keyword in keywords:
+            for item in normalized:
+                if keyword in item["combined"]:
+                    return item["name"]
+
+        # Dann allgemeine ALSA-Default-Geräte als Fallback
+        for item in normalized:
+            if item["name"].startswith("alsa/auto"):
+                return item["name"]
+
+        for item in normalized:
+            if item["name"].startswith("alsa/default"):
+                return item["name"]
+
+        for item in normalized:
+            if item["name"] == "auto":
+                return item["name"]
+
+        return None
+
+    def _apply_audio_output_preference(self) -> None:
+        self._ensure_mpv_running()
+        devices = self._get_audio_device_list()
+
+        self._write_log_marker("audio-device-list")
+        if not devices:
+            self._write_log_line("audio-device-list is empty")
+            return
+
+        for item in devices:
+            name = str(item.get("name") or "")
+            description = str(item.get("description") or "")
+            self._write_log_line("device: {} | {}".format(name, description))
+
+        selected_name = self._pick_audio_device_name(devices, AUDIO_OUTPUT)
+        if not selected_name:
+            self._write_log_line("no matching audio device found for AUDIO_OUTPUT={}".format(AUDIO_OUTPUT))
+            return
+
+        response = self._set_property("audio-device", selected_name)
+        self._write_log_line("selected audio-device: {}".format(selected_name))
+        self._write_log_line("set_property response: {}".format(response))
+
     def show_idle_overlay(self) -> None:
         self._send_raw_command(["set_property", "osd-level", 3])
         self._send_raw_command(["show-text", self._idle_overlay_text(), 999999, 0])
@@ -157,6 +233,7 @@ class MPVPlayer:
     def play_url(self, url: str, start_pos: Optional[float] = None) -> None:
         self.clear_idle_overlay()
         self._write_log_marker("play_url")
+        self._apply_audio_output_preference()
         self._send_command(["loadfile", url, "replace"])
         if start_pos is not None and float(start_pos) > 0.5:
             time.sleep(0.8)
@@ -202,7 +279,7 @@ class MPVPlayer:
             pass
         return status
 
-    def get_log_tail(self, max_lines: int = 80, max_chars: int = 16000) -> str:
+    def get_log_tail(self, max_lines: int = 120, max_chars: int = 24000) -> str:
         try:
             if not os.path.exists(self.log_path):
                 return ""
