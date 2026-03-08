@@ -1,281 +1,224 @@
-function formatDuration(seconds) {
-    if (seconds === null || seconds === undefined) {
-        return "-";
-    }
-    seconds = Math.floor(seconds);
-    var h = Math.floor(seconds / 3600);
-    var m = Math.floor((seconds % 3600) / 60);
-    var s = seconds % 60;
-    if (h > 0) {
-        return (
-            String(h) +
-            ":" +
-            String(m).padStart(2, "0") +
-            ":" +
-            String(s).padStart(2, "0")
-        );
-    }
-    return String(m) + ":" + String(s).padStart(2, "0");
-}
-
 async function apiGet(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error("HTTP " + response.status);
-    }
-    return response.json();
+  const response = await fetch(url);
+  return await response.json();
 }
 
-async function apiPost(url, bodyObj) {
-    const response = await fetch(url, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(bodyObj || {})
-    });
-    if (!response.ok) {
-        throw new Error("HTTP " + response.status);
-    }
-    return response.json();
+async function apiPost(url, data) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data || {})
+  });
+  return await response.json();
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined) {
+    return "";
+  }
+  const s = Number(seconds);
+  if (Number.isNaN(s)) {
+    return "";
+  }
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+  return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
 async function doSearch() {
-    const input = document.getElementById("search-input");
-    const q = (input.value || "").trim();
-    if (!q) {
-        return;
-    }
-    const resultsDiv = document.getElementById("search-results");
-    resultsDiv.innerHTML = "<p>Suche läuft …</p>";
-    try {
-        const data = await apiGet("/api/search?q=" + encodeURIComponent(q));
-        renderSearchResults(data.results || []);
-    } catch (err) {
-        resultsDiv.innerHTML = "<p>Fehler bei der Suche.</p>";
-    }
-}
+  const input = document.getElementById("search-input");
+  const target = document.getElementById("search-results");
+  const query = input.value.trim();
 
-function renderSearchResults(results) {
-    const container = document.getElementById("search-results");
+  if (!query) {
+    target.innerHTML = "";
+    return;
+  }
+
+  target.innerHTML = "Suche läuft ...";
+
+  try {
+    const data = await apiGet(`/api/search?q=${encodeURIComponent(query)}`);
+    const results = data.results || [];
+
     if (!results.length) {
-        container.innerHTML = "<p>Keine Ergebnisse.</p>";
-        return;
+      target.innerHTML = "<div class='small'>Keine Treffer.</div>";
+      return;
     }
-    const fragment = document.createDocumentFragment();
-    results.forEach(function (item) {
-        const div = document.createElement("div");
-        div.className = "result-item";
 
-        const thumb = document.createElement("div");
-        thumb.className = "result-thumb";
-        if (item.thumbnail) {
-            const img = document.createElement("img");
-            img.src = item.thumbnail;
-            img.alt = "Vorschaubild";
-            thumb.appendChild(img);
-        }
+    target.innerHTML = results.map((item) => {
+      const title = escapeHtml(item.title || "Unbekannt");
+      const channel = escapeHtml(item.channel || "");
+      const duration = formatDuration(item.duration);
 
-        const info = document.createElement("div");
-        info.className = "result-info";
-
-        const title = document.createElement("p");
-        title.className = "result-title";
-        title.textContent = item.title || "(ohne Titel)";
-
-        const meta = document.createElement("p");
-        meta.className = "result-meta";
-        var durationText = formatDuration(item.duration);
-        var channel = item.channel || "";
-        meta.textContent = durationText + (channel ? " – " + channel : "");
-
-        info.appendChild(title);
-        info.appendChild(meta);
-
-        const actions = document.createElement("div");
-        actions.className = "result-actions";
-
-        const addButton = document.createElement("button");
-        addButton.textContent = "Zur Warteschlange";
-        addButton.addEventListener("click", function () {
-            addToQueue(item);
-        });
-
-        actions.appendChild(addButton);
-
-        div.appendChild(thumb);
-        div.appendChild(info);
-        div.appendChild(actions);
-        fragment.appendChild(div);
-    });
-    container.innerHTML = "";
-    container.appendChild(fragment);
+      return `
+        <div class="list-item">
+          <div class="title">${title}</div>
+          <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
+          <div class="controls">
+            <button onclick='addToQueue(${JSON.stringify(item)})'>Zur Playlist hinzufügen</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    target.innerHTML = "<div class='status status-error'>Fehler bei der Suche.</div>";
+  }
 }
 
 async function addToQueue(item) {
-    try {
-        await apiPost("/api/queue/add", {
-            id: item.id,
-            title: item.title,
-            channel: item.channel,
-            duration: item.duration,
-            webpage_url: item.webpage_url
-        });
-        await refreshQueue();
-    } catch (err) {
-        alert("Fehler beim Hinzufügen zur Warteschlange.");
-    }
-}
-
-async function refreshQueue() {
-    try {
-        const data = await apiGet("/api/queue");
-        renderQueue(data.queue || []);
-    } catch (err) {
-        // optional: Fehler behandeln
-    }
-}
-
-function renderQueue(queue) {
-    const container = document.getElementById("queue-list");
-    if (!queue.length) {
-        container.innerHTML = "<p>Warteschlange ist leer.</p>";
-        return;
-    }
-    const fragment = document.createDocumentFragment();
-    queue.forEach(function (item, index) {
-        const div = document.createElement("div");
-        div.className = "queue-item";
-
-        const info = document.createElement("div");
-        info.className = "queue-info";
-
-        const title = document.createElement("p");
-        title.className = "queue-title";
-        title.textContent = item.title || "(ohne Titel)";
-
-        const meta = document.createElement("p");
-        meta.className = "queue-meta";
-        var durationText = formatDuration(item.duration);
-        var channel = item.channel || "";
-        meta.textContent = durationText + (channel ? " – " + channel : "");
-        info.appendChild(title);
-        info.appendChild(meta);
-
-        const actions = document.createElement("div");
-        actions.className = "queue-actions-inline";
-
-        const removeButton = document.createElement("button");
-        removeButton.textContent = "Entfernen";
-        removeButton.addEventListener("click", function () {
-            removeFromQueue(index);
-        });
-
-        actions.appendChild(removeButton);
-
-        div.appendChild(info);
-        div.appendChild(actions);
-        fragment.appendChild(div);
-    });
-    container.innerHTML = "";
-    container.appendChild(fragment);
+  await apiPost("/api/queue/add", item);
+  await refreshQueue();
 }
 
 async function removeFromQueue(index) {
-    try {
-        await apiPost("/api/queue/remove", {index: index});
-        await refreshQueue();
-    } catch (err) {
-        alert("Fehler beim Entfernen aus der Warteschlange.");
-    }
+  await apiPost("/api/queue/remove", { index: index });
+  await refreshQueue();
+  await refreshPlayerStatus();
 }
 
-async function refreshStatus() {
-    try {
-        const data = await apiGet("/api/player/status");
-        const statusText = document.getElementById("status-text");
-        const statusTitle = document.getElementById("status-title");
-        const statusPosition = document.getElementById("status-position");
-
-        if (data.playing) {
-            if (data.paused) {
-                statusText.textContent = "Pausiert";
-            } else {
-                statusText.textContent = "Wiedergabe läuft";
-            }
-        } else {
-            statusText.textContent = "Leerlauf";
-        }
-
-        statusTitle.textContent = data.title || "–";
-
-        if (data.time_pos !== null && data.duration !== null) {
-            statusPosition.textContent =
-                formatDuration(data.time_pos) +
-                " / " +
-                formatDuration(data.duration);
-        } else {
-            statusPosition.textContent = "–";
-        }
-    } catch (err) {
-        // optional: Fehlerbehandlung
-    }
+async function playIndex(index) {
+  await apiPost("/api/player/play_index", { index: index });
+  await refreshQueue();
+  await refreshPlayerStatus();
 }
 
-async function clearQueue() {
-    if (!confirm("Warteschlange wirklich leeren?")) {
-        return;
-    }
-    try {
-        await apiPost("/api/queue/clear", {});
-        await refreshQueue();
-    } catch (err) {
-        alert("Fehler beim Leeren der Warteschlange.");
-    }
+async function playerPlay() {
+  await apiPost("/api/player/play", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
 }
 
 async function playerPause() {
-    try {
-        await apiPost("/api/player/pause", {});
-        await refreshStatus();
-    } catch (err) {
-        alert("Fehler beim Pausieren/Fortsetzen.");
+  await apiPost("/api/player/pause", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function playerResume() {
+  await apiPost("/api/player/resume", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function playerStop() {
+  await apiPost("/api/player/stop", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function playerNext() {
+  await apiPost("/api/player/next", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function playerPrevious() {
+  await apiPost("/api/player/previous", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function clearQueue() {
+  await apiPost("/api/queue/clear", {});
+  await refreshPlayerStatus();
+  await refreshQueue();
+}
+
+async function refreshQueue() {
+  const target = document.getElementById("queue-list");
+  const data = await apiGet("/api/queue");
+  const queue = data.queue || [];
+  const currentIndex = data.current_index;
+
+  if (!queue.length) {
+    target.innerHTML = "<div class='small'>Playlist ist leer.</div>";
+    return;
+  }
+
+  target.innerHTML = queue.map((item, index) => {
+    const title = escapeHtml(item.title || "Unbekannt");
+    const channel = escapeHtml(item.channel || "");
+    const duration = formatDuration(item.duration);
+    const status = escapeHtml(item.status || "queued");
+    const isCurrent = index === currentIndex;
+    const errorText = item.error ? `<div class="small status-error">${escapeHtml(item.error)}</div>` : "";
+
+    return `
+      <div class="list-item">
+        <div class="title">${isCurrent ? "▶ " : ""}${title}</div>
+        <div class="meta">${channel} ${duration ? "• " + duration : ""}</div>
+        <div class="status status-${status}">Status: ${status}</div>
+        ${errorText}
+        <div class="controls">
+          <button onclick="playIndex(${index})">Abspielen</button>
+          <button onclick="removeFromQueue(${index})">Entfernen</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+async function refreshPlayerStatus() {
+  const target = document.getElementById("player-status");
+  const data = await apiGet("/api/player/status");
+
+  const currentItem = data.current_item;
+  const title = currentItem && currentItem.title ? escapeHtml(currentItem.title) : "Kein Titel";
+  const state = data.playing ? "Wiedergabe läuft" : (data.paused ? "Pausiert" : "Leerlauf");
+
+  let html = `<div><strong>Status:</strong> ${state}</div>`;
+
+  if (currentItem) {
+    html += `<div><strong>Titel:</strong> ${title}</div>`;
+    if (currentItem.channel) {
+      html += `<div><strong>Kanal:</strong> ${escapeHtml(currentItem.channel)}</div>`;
     }
+  }
+
+  if (data.time_pos !== null && data.duration !== null) {
+    html += `<div><strong>Fortschritt:</strong> ${formatDuration(data.time_pos)} / ${formatDuration(data.duration)}</div>`;
+  }
+
+  target.innerHTML = html;
 }
 
-async function playerSkip() {
-    try {
-        await apiPost("/api/player/skip", {});
-        await refreshStatus();
-        await refreshQueue();
-    } catch (err) {
-        alert("Fehler beim Überspringen.");
+function bindUi() {
+  document.getElementById("search-button").addEventListener("click", doSearch);
+  document.getElementById("search-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      doSearch();
     }
+  });
+
+  document.getElementById("btn-play").addEventListener("click", playerPlay);
+  document.getElementById("btn-pause").addEventListener("click", playerPause);
+  document.getElementById("btn-resume").addEventListener("click", playerResume);
+  document.getElementById("btn-stop").addEventListener("click", playerStop);
+  document.getElementById("btn-prev").addEventListener("click", playerPrevious);
+  document.getElementById("btn-next").addEventListener("click", playerNext);
+  document.getElementById("btn-clear").addEventListener("click", clearQueue);
 }
 
-function setupEventHandlers() {
-    const searchInput = document.getElementById("search-input");
-    const searchButton = document.getElementById("search-button");
-    const clearQueueButton = document.getElementById("clear-queue-button");
-    const pauseButton = document.getElementById("pause-button");
-    const skipButton = document.getElementById("skip-button");
-
-    searchButton.addEventListener("click", doSearch);
-    searchInput.addEventListener("keydown", function (ev) {
-        if (ev.key === "Enter") {
-            doSearch();
-        }
-    });
-
-    clearQueueButton.addEventListener("click", clearQueue);
-    pauseButton.addEventListener("click", playerPause);
-    skipButton.addEventListener("click", playerSkip);
+async function refreshAll() {
+  await refreshPlayerStatus();
+  await refreshQueue();
 }
 
-document.addEventListener("DOMContentLoaded", function () {
-    setupEventHandlers();
-    refreshQueue();
-    refreshStatus();
-    setInterval(function () {
-        refreshStatus();
-        refreshQueue();
-    }, 5000);
-});
+bindUi();
+refreshAll();
+setInterval(refreshAll, 3000);

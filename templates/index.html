@@ -1,55 +1,114 @@
 <!doctype html>
 <html lang="de">
 <head>
-    <meta charset="utf-8">
-    <title>ScreenInvader 2.0</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="/static/style.css">
+  <meta charset="utf-8">
+  <title>ScreenInvader 2.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #111;
+      color: #eee;
+    }
+    h1, h2 {
+      margin-top: 0;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    input[type="text"] {
+      flex: 1;
+      min-width: 280px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    button {
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .panel {
+      background: #1b1b1b;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .list-item {
+      border-bottom: 1px solid #333;
+      padding: 10px 0;
+    }
+    .list-item:last-child {
+      border-bottom: none;
+    }
+    .title {
+      font-weight: bold;
+    }
+    .meta {
+      color: #bbb;
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .status {
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .status-queued { color: #ccc; }
+    .status-playing { color: #66bb6a; }
+    .status-paused { color: #ffa726; }
+    .status-done { color: #64b5f6; }
+    .status-error { color: #ef5350; }
+    .current-box {
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .small {
+      font-size: 13px;
+      color: #bbb;
+    }
+  </style>
 </head>
 <body>
-<div class="wrapper">
-    <header>
-        <h1>ScreenInvader 2.0</h1>
-        <p>Gemeinsame YouTube-Playlist im lokalen Netzwerk</p>
-    </header>
+  <h1>ScreenInvader 2.0</h1>
 
-    <main>
-        <section class="search-section">
-            <h2>Suche</h2>
-            <div class="search-bar">
-                <input type="text" id="search-input" placeholder="YouTube-Suche …">
-                <button id="search-button">Suchen</button>
-            </div>
-            <div id="search-results"></div>
-        </section>
+  <div class="panel">
+    <h2>Suche</h2>
+    <div class="row">
+      <input id="search-input" type="text" placeholder="Suchbegriff oder direkte URL eingeben">
+      <button id="search-button">Suchen</button>
+    </div>
+    <div id="search-results"></div>
+  </div>
 
-        <section class="queue-section">
-            <h2>Warteschlange</h2>
-            <div class="queue-actions">
-                <button id="clear-queue-button">Warteschlange leeren</button>
-            </div>
-            <div id="queue-list"></div>
-        </section>
+  <div class="panel">
+    <h2>Player</h2>
+    <div id="player-status" class="current-box">Leerlauf</div>
+    <div class="controls">
+      <button id="btn-play">Play</button>
+      <button id="btn-pause">Pause</button>
+      <button id="btn-resume">Resume</button>
+      <button id="btn-stop">Stop</button>
+      <button id="btn-prev">Previous</button>
+      <button id="btn-next">Next</button>
+      <button id="btn-clear">Playlist leeren</button>
+    </div>
+  </div>
 
-        <section class="player-section">
-            <h2>Player</h2>
-            <div id="player-status">
-                <div><strong>Status:</strong> <span id="status-text">–</span></div>
-                <div><strong>Titel:</strong> <span id="status-title">–</span></div>
-                <div><strong>Position:</strong> <span id="status-position">–</span></div>
-            </div>
-            <div class="player-controls">
-                <button id="pause-button">Pause / Weiter</button>
-                <button id="skip-button">Überspringen</button>
-            </div>
-        </section>
-    </main>
+  <div class="panel">
+    <h2>Wiedergabeliste</h2>
+    <div id="queue-list"></div>
+  </div>
 
-    <footer>
-        <p>ScreenInvader 2.0 – lokale Jukebox</p>
-    </footer>
-</div>
-
-<script src="/static/app.js"></script>
+  <script src="/static/app.js"></script>
 </body>
 </html>

@@ -16,6 +16,8 @@ player = MPVPlayer()
 yt = YTDLPWrapper()
 
 _playback_worker_started = False
+_manual_stop_requested = False
+_last_started_index = -1
 
 
 @app.route("/")
@@ -28,6 +30,7 @@ def api_search():
     query = request.args.get("q", "").strip()
     if not query:
         return jsonify({"results": []})
+
     try:
         results = yt.search(query)
         return jsonify({"results": results})
@@ -39,35 +42,39 @@ def api_search():
 
 @app.route("/api/queue", methods=["GET"])
 def api_get_queue():
-    return jsonify({"queue": queue_manager.get_queue()})
+    return jsonify(
+        {
+            "queue": queue_manager.get_queue(),
+            "current_index": queue_manager.get_current_index(),
+            "current_item": queue_manager.get_current_item(),
+        }
+    )
 
 
 @app.route("/api/queue/add", methods=["POST"])
 def api_add_queue():
     data = request.get_json(force=True, silent=True) or {}
-    video_id = data.get("id")
-    title = data.get("title")
-    channel = data.get("channel")
-    duration = data.get("duration")
     webpage_url = data.get("webpage_url")
 
     if not webpage_url:
         return jsonify({"error": "missing_webpage_url"}), 400
 
     item = {
-        "id": video_id if video_id else webpage_url,
-        "title": title,
-        "channel": channel,
-        "duration": duration,
+        "id": data.get("id") or webpage_url,
+        "title": data.get("title"),
+        "channel": data.get("channel"),
+        "duration": data.get("duration"),
         "webpage_url": webpage_url,
-        "status": "queued",
     }
-    saved_item = queue_manager.add_item(item)
-    return jsonify({"status": "ok", "item": saved_item})
+    saved = queue_manager.add_item(item)
+    return jsonify({"status": "ok", "item": saved})
 
 
 @app.route("/api/queue/clear", methods=["POST"])
 def api_clear_queue():
+    global _manual_stop_requested, _last_started_index
+    _manual_stop_requested = True
+    _last_started_index = -1
     queue_manager.clear()
     player.stop()
     return jsonify({"status": "ok"})
@@ -77,15 +84,19 @@ def api_clear_queue():
 def api_remove_from_queue():
     data = request.get_json(force=True, silent=True) or {}
     index = data.get("index")
+
     if index is None:
         return jsonify({"error": "missing_index"}), 400
+
     try:
         index = int(index)
     except ValueError:
         return jsonify({"error": "invalid_index"}), 400
-    success = queue_manager.remove_index(index)
-    if not success:
+
+    ok = queue_manager.remove_index(index)
+    if not ok:
         return jsonify({"error": "index_out_of_range"}), 400
+
     return jsonify({"status": "ok"})
 
 
@@ -93,66 +104,167 @@ def api_remove_from_queue():
 def api_player_status():
     status = player.get_status()
     status["queue_size"] = queue_manager.size()
-    status["queue_playing_item"] = queue_manager.get_playing_item()
+    status["current_index"] = queue_manager.get_current_index()
+    status["current_item"] = queue_manager.get_current_item()
     return jsonify(status)
+
+
+@app.route("/api/player/play", methods=["POST"])
+def api_player_play():
+    global _manual_stop_requested
+    _manual_stop_requested = False
+
+    current = queue_manager.get_current_item()
+    if current is None and queue_manager.size() > 0:
+        queue_manager.set_current_index(0, playing=False)
+
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/player/pause", methods=["POST"])
 def api_player_pause():
-    player.pause_toggle()
-    return jsonify({"status": "ok"})
+    try:
+        player.set_pause(True)
+        queue_manager.mark_current_paused()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": "pause_failed", "details": str(e)}), 500
 
 
-@app.route("/api/player/skip", methods=["POST"])
-def api_player_skip():
-    currently_playing = queue_manager.get_playing_item()
-    if currently_playing:
-        queue_manager.mark_done_by_id(currently_playing.get("id"))
+@app.route("/api/player/resume", methods=["POST"])
+def api_player_resume():
+    global _manual_stop_requested
+    _manual_stop_requested = False
+    try:
+        player.set_pause(False)
+        queue_manager.mark_current_playing()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": "resume_failed", "details": str(e)}), 500
+
+
+@app.route("/api/player/stop", methods=["POST"])
+def api_player_stop():
+    global _manual_stop_requested, _last_started_index
+    _manual_stop_requested = True
+    _last_started_index = -1
+    try:
+        player.stop()
+        current_index = queue_manager.get_current_index()
+        if current_index >= 0:
+            queue_manager.set_current_index(current_index, playing=False)
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"error": "stop_failed", "details": str(e)}), 500
+
+
+@app.route("/api/player/next", methods=["POST"])
+def api_player_next():
+    global _manual_stop_requested, _last_started_index
+    _manual_stop_requested = False
+    _last_started_index = -1
+
+    next_idx = queue_manager.next_index()
+    if next_idx == -1:
+        player.stop()
+        return jsonify({"status": "end_of_queue"})
+
     player.stop()
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "current_index": next_idx})
+
+
+@app.route("/api/player/previous", methods=["POST"])
+def api_player_previous():
+    global _manual_stop_requested, _last_started_index
+    _manual_stop_requested = False
+    _last_started_index = -1
+
+    prev_idx = queue_manager.previous_index()
+    if prev_idx == -1:
+        return jsonify({"status": "start_of_queue"})
+
+    player.stop()
+    return jsonify({"status": "ok", "current_index": prev_idx})
+
+
+@app.route("/api/player/play_index", methods=["POST"])
+def api_player_play_index():
+    global _manual_stop_requested, _last_started_index
+    data = request.get_json(force=True, silent=True) or {}
+    index = data.get("index")
+
+    if index is None:
+        return jsonify({"error": "missing_index"}), 400
+
+    try:
+        index = int(index)
+    except ValueError:
+        return jsonify({"error": "invalid_index"}), 400
+
+    ok = queue_manager.set_current_index(index, playing=False)
+    if not ok:
+        return jsonify({"error": "index_out_of_range"}), 400
+
+    _manual_stop_requested = False
+    _last_started_index = -1
+    player.stop()
+    return jsonify({"status": "ok", "current_index": index})
 
 
 def playback_worker():
-    """
-    Hintergrund-Thread:
-    - sucht das nächste Element mit status='queued'
-    - versucht, die Stream-URL zu ermitteln
-    - markiert nur bei erfolgreichem Start auf 'playing'
-    - markiert bei Fehlern auf 'error'
-    """
+    global _manual_stop_requested, _last_started_index
+
     while True:
         try:
-            if not player.is_playing():
-                currently_playing = queue_manager.get_playing_item()
-                if currently_playing is not None:
-                    queue_manager.mark_done_by_id(currently_playing.get("id"))
+            if player.is_playing():
+                time.sleep(1.0)
+                continue
 
-                next_item = queue_manager.get_next_queued_item()
-                if next_item is not None:
-                    item_id = next_item.get("id")
-                    url = next_item.get("webpage_url")
+            current_index, current_item = queue_manager.current_stream_target()
 
-                    if url:
-                        try:
-                            stream_url = yt.get_stream_url(url)
-                            if stream_url:
-                                player.play_url(stream_url)
-                                queue_manager.mark_playing_by_id(item_id)
-                            else:
-                                queue_manager.mark_error_by_id(
-                                    item_id,
-                                    "Keine Stream-URL ermittelbar"
-                                )
-                        except Exception as e:
-                            print("Playback error:", str(e))
-                            traceback.print_exc()
-                            queue_manager.mark_error_by_id(item_id, str(e))
+            if current_item is None:
+                time.sleep(1.0)
+                continue
 
-            time.sleep(2.0)
+            if _manual_stop_requested:
+                time.sleep(1.0)
+                continue
+
+            if current_index == _last_started_index and current_item.get("status") in ("done", "error"):
+                time.sleep(1.0)
+                continue
+
+            url = current_item.get("webpage_url")
+            if not url:
+                queue_manager.mark_current_error("missing_webpage_url")
+                time.sleep(1.0)
+                continue
+
+            try:
+                stream_url = yt.get_stream_url(url)
+                if not stream_url:
+                    queue_manager.mark_current_error("Keine Stream-URL ermittelbar")
+                    time.sleep(1.0)
+                    continue
+
+                player.play_url(stream_url)
+                queue_manager.mark_current_playing()
+                _last_started_index = current_index
+
+                time.sleep(2.0)
+
+                if not player.is_playing():
+                    queue_manager.mark_current_error("Playback start failed")
+            except Exception as e:
+                print("Playback error:", str(e))
+                traceback.print_exc()
+                queue_manager.mark_current_error(str(e))
+
+            time.sleep(1.0)
         except Exception as e:
             print("Worker error:", str(e))
             traceback.print_exc()
-            time.sleep(2.0)
+            time.sleep(1.0)
 
 
 def start_playback_worker_once():
@@ -161,10 +273,6 @@ def start_playback_worker_once():
         thread = threading.Thread(target=playback_worker, daemon=True)
         thread.start()
         _playback_worker_started = True
-
-
-def init_background_worker():
-    start_playback_worker_once()
 
 
 if __name__ == "__main__":
