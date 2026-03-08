@@ -50,12 +50,14 @@ body {
         grid-template-columns: 1.15fr 1fr;
         grid-template-areas:
             "search player"
-            "queue queue";
+            "queue queue"
+            "debug debug";
     }
 
     .panel-search { grid-area: search; }
     .panel-player { grid-area: player; }
     .panel-queue { grid-area: queue; }
+    .panel-debug { grid-area: debug; }
 }
 
 .panel {
@@ -253,4 +255,28 @@ body {
     margin-top: 8px;
     color: var(--red);
     font-size: 13px;
+}
+
+.debug-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+    color: var(--muted);
+}
+
+.debug-box {
+    margin: 0;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: #0d1118;
+    color: #d7e2f0;
+    max-height: 360px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
 }

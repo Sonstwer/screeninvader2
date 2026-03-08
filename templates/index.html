@@ -78,6 +78,20 @@
             </div>
             <div id="queue-list" class="list"></div>
         </section>
+
+        <section class="panel panel-debug">
+            <div class="panel-head">
+                <h2>Debug</h2>
+                <button id="debug-refresh-button" class="mini-btn">Aktualisieren</button>
+            </div>
+            <div class="debug-grid">
+                <div><strong>Letztes Event:</strong> <span id="debug-last-event">–</span></div>
+                <div><strong>Letzter Fehler:</strong> <span id="debug-last-error">–</span></div>
+                <div><strong>Manual Stop:</strong> <span id="debug-manual-stop">–</span></div>
+                <div><strong>Playback bestätigt:</strong> <span id="debug-confirmed">–</span></div>
+            </div>
+            <pre id="debug-json" class="debug-box">Lade Debug-Daten ...</pre>
+        </section>
     </main>
 </div>
 

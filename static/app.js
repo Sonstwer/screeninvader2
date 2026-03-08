@@ -39,6 +39,14 @@ function formatDuration(seconds) {
     return String(m) + ":" + String(sec).padStart(2, "0");
 }
 
+function formatTimestamp(ts) {
+    if (!ts) {
+        return "–";
+    }
+    const d = new Date(ts * 1000);
+    return d.toLocaleString();
+}
+
 function setSearchState(running, queryText) {
     const button = document.getElementById("search-button");
     const meta = document.getElementById("search-meta");
@@ -165,12 +173,14 @@ async function addToQueue(item) {
         webpage_url: item.webpage_url
     });
     await refreshQueue();
+    await refreshDebug();
 }
 
 async function removeFromQueue(index) {
     await apiPost("/api/queue/remove", {index: index});
     await refreshQueue();
     await refreshPlayerStatus();
+    await refreshDebug();
 }
 
 async function playIndex(index) {
@@ -314,9 +324,24 @@ async function refreshPlayerStatus() {
     }
 }
 
+async function refreshDebug() {
+    const data = await apiGet("/api/debug");
+
+    document.getElementById("debug-last-event").textContent =
+        (data.last_debug_event ? data.last_debug_event.message : "–") + " @ " +
+        (data.last_debug_event ? formatTimestamp(data.last_debug_event.timestamp) : "–");
+
+    document.getElementById("debug-last-error").textContent = data.last_playback_error || "–";
+    document.getElementById("debug-manual-stop").textContent = String(data.manual_stop_requested);
+    document.getElementById("debug-confirmed").textContent = String(data.last_confirmed_playback);
+
+    document.getElementById("debug-json").textContent = JSON.stringify(data, null, 2);
+}
+
 async function refreshAll() {
     await refreshPlayerStatus();
     await refreshQueue();
+    await refreshDebug();
 }
 
 function bindUi() {
@@ -333,6 +358,7 @@ function bindUi() {
     document.getElementById("next-button").addEventListener("click", playerNext);
     document.getElementById("shuffle-button").addEventListener("click", shuffleQueue);
     document.getElementById("clear-button").addEventListener("click", clearQueue);
+    document.getElementById("debug-refresh-button").addEventListener("click", refreshDebug);
 }
 
 bindUi();
