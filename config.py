@@ -8,6 +8,9 @@ PORT = 5000
 QUEUE_FILE = os.path.join(BASE_DIR, "queue.json")
 MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+MPV_LOG_PATH = os.path.join(LOG_DIR, "mpv.log")
+
 # "hdmi" oder "analog"
 AUDIO_OUTPUT = "hdmi"
 
@@ -40,10 +43,7 @@ YTDLP_SEARCH_OPTS = {
     "forceipv4": True,
 }
 
-# WICHTIG:
-# Nicht mehr zuerst "18" erzwingen.
-# Auf diesem Banana Pi lieber zuerst direkte Audioformate,
-# weil genau diese Abspielart lokal schon funktioniert hat.
+# Zuerst robuste direkte Audioformate bevorzugen
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,

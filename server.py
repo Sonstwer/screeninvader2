@@ -4,7 +4,7 @@ import traceback
 
 from flask import Flask, jsonify, render_template, request
 
-from config import HOST, PORT, QUEUE_FILE
+from config import HOST, PORT, QUEUE_FILE, MPV_LOG_PATH
 from player import MPVPlayer
 from queue_manager import QueueManager
 from yt_wrapper import YTDLPWrapper
@@ -113,10 +113,6 @@ def _extract_time_pos(status_dict):
 
 
 def _wait_for_real_playback_start(timeout_seconds: float = 15.0):
-    """
-    Playback gilt nur dann als wirklich gestartet, wenn time_pos
-    messbar voranschreitet. Reine Metadaten reichen nicht.
-    """
     deadline = time.time() + timeout_seconds
     last_time_pos = None
 
@@ -329,6 +325,8 @@ def api_debug():
             "current_index": queue_manager.get_current_index(),
             "queue_size": len(queue),
             "queue": queue,
+            "mpv_log_path": MPV_LOG_PATH,
+            "mpv_log_tail": player.get_log_tail(max_lines=120, max_chars=24000),
         }
     )
 

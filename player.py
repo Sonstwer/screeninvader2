@@ -6,15 +6,17 @@ import threading
 import time
 from typing import Any, Dict, Optional
 
-from config import MPV_SOCKET_PATH, MPV_COMMAND, AUDIO_OUTPUT
+from config import MPV_SOCKET_PATH, MPV_COMMAND, AUDIO_OUTPUT, MPV_LOG_PATH
 
 
 class MPVPlayer:
-    def __init__(self, socket_path: str = MPV_SOCKET_PATH, command=None):
+    def __init__(self, socket_path: str = MPV_SOCKET_PATH, command=None, log_path: str = MPV_LOG_PATH):
         self.socket_path = socket_path
         self.command = command if command is not None else MPV_COMMAND
+        self.log_path = log_path
         self._process = None  # type: Optional[subprocess.Popen]
         self._lock = threading.Lock()
+        self._log_handle = None
 
     def _get_ip_text(self) -> Optional[str]:
         try:
@@ -51,6 +53,22 @@ class MPVPlayer:
 
         return cmd
 
+    def _ensure_log_ready(self) -> None:
+        log_dir = os.path.dirname(self.log_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+
+        if self._log_handle is None or self._log_handle.closed:
+            self._log_handle = open(self.log_path, "ab", buffering=0)
+
+    def _write_log_marker(self, text: str) -> None:
+        try:
+            self._ensure_log_ready()
+            line = "\n===== {} =====\n".format(text)
+            self._log_handle.write(line.encode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+
     def _ensure_mpv_running(self) -> None:
         with self._lock:
             if self._process is not None and self._process.poll() is None:
@@ -62,10 +80,13 @@ class MPVPlayer:
             except Exception:
                 pass
 
+            self._ensure_log_ready()
+            self._write_log_marker("mpv start {}".format(time.strftime("%Y-%m-%d %H:%M:%S")))
+
             self._process = subprocess.Popen(
                 self._build_command(),
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=self._log_handle,
             )
 
             for _ in range(80):
@@ -121,12 +142,14 @@ class MPVPlayer:
 
     def play_url(self, url: str, start_pos: Optional[float] = None) -> None:
         self.clear_idle_overlay()
+        self._write_log_marker("play_url")
         self._send_command(["loadfile", url, "replace"])
         if start_pos is not None and float(start_pos) > 0.5:
             time.sleep(0.8)
             self._send_command(["set_property", "time-pos", float(start_pos)])
 
     def stop(self) -> None:
+        self._write_log_marker("stop")
         self._send_command(["stop"])
         time.sleep(0.2)
         self.show_idle_overlay()
@@ -164,3 +187,18 @@ class MPVPlayer:
         except Exception:
             pass
         return status
+
+    def get_log_tail(self, max_lines: int = 80, max_chars: int = 16000) -> str:
+        try:
+            if not os.path.exists(self.log_path):
+                return ""
+
+            with open(self.log_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+
+            text = "".join(lines[-max_lines:])
+            if len(text) > max_chars:
+                text = text[-max_chars:]
+            return text
+        except Exception as e:
+            return "Log konnte nicht gelesen werden: {}".format(str(e))

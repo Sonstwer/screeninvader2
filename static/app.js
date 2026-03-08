@@ -334,8 +334,11 @@ async function refreshDebug() {
     document.getElementById("debug-last-error").textContent = data.last_playback_error || "–";
     document.getElementById("debug-manual-stop").textContent = String(data.manual_stop_requested);
     document.getElementById("debug-confirmed").textContent = String(data.last_confirmed_playback);
+    document.getElementById("debug-progress-seen").textContent = String(data.last_progress_seen);
+    document.getElementById("debug-mpv-log-path").textContent = data.mpv_log_path || "–";
 
     document.getElementById("debug-json").textContent = JSON.stringify(data, null, 2);
+    document.getElementById("debug-mpv-log").textContent = data.mpv_log_tail || "(leer)";
 }
 
 async function refreshAll() {
