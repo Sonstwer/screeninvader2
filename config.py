@@ -6,30 +6,41 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HOST = "0.0.0.0"
 PORT = 5000
 
-# Queue-Datei (persistente Warteschlange)
+# Queue-Datei
 QUEUE_FILE = os.path.join(BASE_DIR, "queue.json")
 
-# mpv IPC Socket (für JSON-API)
+# mpv IPC Socket
 MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 
 # Standard-Audioausgabe:
 #   "hdmi"   -> HDMI-Ausgang
 #   "analog" -> 3,5mm-Klinke
-AUDIO_OUTPUT = "hdmi"
+AUDIO_OUTPUT = "analog" 
 
-# Basis-Startbefehl für mpv (weitere Optionen werden in player.py ergänzt)
+# mpv-Startbefehl – Audio-only
 MPV_COMMAND = [
     "mpv",
     "--idle=yes",
-    "--force-window=yes",
+    "--force-window=no",
+    "--no-video",
     "--no-terminal",
     "--input-ipc-server={}".format(MPV_SOCKET_PATH),
+
+    # UI reduzieren
+    "--osc=no",
+    "--osd-bar=no",
+    "--audio-display=no",
+    "--player-operation-mode=cplayer",
+
+    # Audio-only: eher konservativ
+    "--cache=yes",
+    "--demuxer-readahead-secs=8",
 ]
 
-# Anzahl Suchergebnisse im Web-UI
+# Anzahl Suchergebnisse
 SEARCH_LIMIT = 10
 
-# yt-dlp: Optionen für Suchanfragen
+# yt-dlp: Suche
 YTDLP_SEARCH_OPTS = {
     "quiet": True,
     "skip_download": True,
@@ -38,18 +49,13 @@ YTDLP_SEARCH_OPTS = {
     "forceipv4": True,
 }
 
-# yt-dlp: Optionen für das Ermitteln der Stream-URL
-# Bevorzugt bis 1080p, mit Fallback auf 720/480/360, danach generische Fallbacks.
+# yt-dlp: Stream-URL-Ermittlung – nur Audio
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,
     "forceipv4": True,
     "format": (
-        "bv*[height<=1080]+ba / "
-        "bv*[height<=720]+ba / "
-        "bv*[height<=480]+ba / "
-        "bv*[height<=360]+ba / "
-        "bestvideo+bestaudio / "
+        "bestaudio[acodec!=none] / "
         "bestaudio / "
         "best"
     ),
