@@ -11,7 +11,7 @@ MPV_SOCKET_PATH = "/tmp/screeninvader2_mpv.sock"
 # "hdmi" oder "analog"
 AUDIO_OUTPUT = "hdmi"
 
-# Audio-only, aber mit sichtbarem Idle-Fenster
+# Audio-Wiedergabe mit sichtbarem Idle-Fenster
 MPV_COMMAND = [
     "mpv",
     "--idle=yes",
@@ -40,9 +40,15 @@ YTDLP_SEARCH_OPTS = {
     "forceipv4": True,
 }
 
+# WICHTIG:
+# Für dieses Gerät zuerst progressive, robuste Formate bevorzugen:
+# - 18  = 360p MP4 mit Audio
+# - 140 = m4a audio only
+# - 139 = m4a low audio
+# Erst danach generische Audioformate
 YTDLP_STREAM_OPTS = {
     "quiet": True,
     "noplaylist": True,
     "forceipv4": True,
-    "format": "bestaudio[acodec!=none]/bestaudio/best",
+    "format": "18/140/139/bestaudio[ext=m4a]/bestaudio/best",
 }

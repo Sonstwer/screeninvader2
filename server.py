@@ -19,6 +19,7 @@ _playback_worker_started = False
 _manual_stop_requested = False
 _last_play_start_ts = 0.0
 _last_confirmed_playback = False
+_last_progress_seen = 0.0
 
 _last_playback_error = ""
 _last_debug_event = {
@@ -101,34 +102,47 @@ def _set_cached_search(query: str, results):
                 _search_cache.pop(oldest_key, None)
 
 
-def _wait_for_real_playback_start(timeout_seconds: float = 12.0) -> bool:
+def _extract_time_pos(status_dict):
+    try:
+        value = status_dict.get("time_pos")
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _wait_for_real_playback_start(timeout_seconds: float = 15.0):
+    """
+    Playback gilt nur dann als wirklich gestartet, wenn time_pos
+    messbar voranschreitet. Reine Metadaten reichen nicht.
+    """
     deadline = time.time() + timeout_seconds
+    last_time_pos = None
 
     while time.time() < deadline:
         try:
             status = player.get_status()
-
-            if status.get("playing"):
-                return True
-
-            time_pos = status.get("time_pos")
-            duration = status.get("duration")
+            time_pos = _extract_time_pos(status)
 
             if time_pos is not None:
-                return True
+                if time_pos >= 0.5:
+                    return True, time_pos
 
-            if duration is not None:
-                return True
+                if last_time_pos is not None and time_pos > (last_time_pos + 0.12):
+                    return True, time_pos
+
+                last_time_pos = time_pos
         except Exception:
             pass
 
         time.sleep(0.5)
 
-    return False
+    return False, 0.0
 
 
 def _play_current_item(start_pos: float = 0.0):
-    global _last_play_start_ts, _last_confirmed_playback
+    global _last_play_start_ts, _last_confirmed_playback, _last_progress_seen
 
     current_item = queue_manager.get_current_item()
     if current_item is None:
@@ -150,19 +164,24 @@ def _play_current_item(start_pos: float = 0.0):
             return False, "no_stream_url"
 
         queue_manager.mark_current_status("queued")
+        _last_confirmed_playback = False
+        _last_progress_seen = 0.0
+
         _set_debug_event("mpv_play_url")
         player.play_url(stream_url, start_pos=start_pos)
 
-        started = _wait_for_real_playback_start(timeout_seconds=12.0)
+        started, first_progress = _wait_for_real_playback_start(timeout_seconds=15.0)
         if not started:
-            queue_manager.mark_current_status("error", "Playback start timeout")
+            queue_manager.mark_current_status("error", "Playback start timeout / no progress")
             _last_confirmed_playback = False
-            _set_playback_error("Playback start timeout")
+            _last_progress_seen = 0.0
+            _set_playback_error("Playback start timeout / no progress")
             return False, "playback_start_timeout"
 
         queue_manager.mark_current_status("playing")
         _last_play_start_ts = time.time()
         _last_confirmed_playback = True
+        _last_progress_seen = max(0.0, float(first_progress or 0.0))
         _clear_playback_error()
         _set_debug_event("playback_started")
         return True, None
@@ -172,6 +191,7 @@ def _play_current_item(start_pos: float = 0.0):
         traceback.print_exc()
         queue_manager.mark_current_status("error", str(e))
         _last_confirmed_playback = False
+        _last_progress_seen = 0.0
         _set_playback_error(str(e))
         return False, str(e)
 
@@ -238,9 +258,10 @@ def api_add_queue():
 
 @app.route("/api/queue/clear", methods=["POST"])
 def api_clear_queue():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
     _manual_stop_requested = True
     _last_confirmed_playback = False
+    _last_progress_seen = 0.0
     queue_manager.clear()
     player.stop()
     _set_debug_event("queue_clear")
@@ -300,6 +321,7 @@ def api_debug():
             "manual_stop_requested": _manual_stop_requested,
             "last_play_start_ts": _last_play_start_ts,
             "last_confirmed_playback": _last_confirmed_playback,
+            "last_progress_seen": _last_progress_seen,
             "last_playback_error": _last_playback_error,
             "last_debug_event": _last_debug_event,
             "player_status": raw_status,
@@ -335,7 +357,7 @@ def api_player_play():
 
 @app.route("/api/player/toggle", methods=["POST"])
 def api_player_toggle():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
 
     current_item = queue_manager.get_current_item()
     if current_item is None and queue_manager.size() > 0:
@@ -353,6 +375,7 @@ def api_player_toggle():
         queue_manager.set_paused_position(pos)
         _manual_stop_requested = True
         _last_confirmed_playback = False
+        _last_progress_seen = float(pos or 0.0)
         player.stop()
         queue_manager.mark_current_status("paused")
         _set_debug_event("player_paused")
@@ -372,9 +395,10 @@ def api_player_toggle():
 
 @app.route("/api/player/stop", methods=["POST"])
 def api_player_stop():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
     _manual_stop_requested = True
     _last_confirmed_playback = False
+    _last_progress_seen = 0.0
     player.stop()
     queue_manager.clear_paused_position()
     if queue_manager.get_current_item() is not None:
@@ -385,9 +409,10 @@ def api_player_stop():
 
 @app.route("/api/player/next", methods=["POST"])
 def api_player_next():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
     _manual_stop_requested = False
     _last_confirmed_playback = False
+    _last_progress_seen = 0.0
 
     player.stop()
     queue_manager.clear_paused_position()
@@ -406,9 +431,10 @@ def api_player_next():
 
 @app.route("/api/player/previous", methods=["POST"])
 def api_player_previous():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
     _manual_stop_requested = False
     _last_confirmed_playback = False
+    _last_progress_seen = 0.0
 
     player.stop()
     queue_manager.clear_paused_position()
@@ -427,7 +453,7 @@ def api_player_previous():
 
 @app.route("/api/player/play_index", methods=["POST"])
 def api_player_play_index():
-    global _manual_stop_requested, _last_confirmed_playback
+    global _manual_stop_requested, _last_confirmed_playback, _last_progress_seen
     data = request.get_json(force=True, silent=True) or {}
     index = data.get("index")
 
@@ -445,6 +471,7 @@ def api_player_play_index():
 
     _manual_stop_requested = False
     _last_confirmed_playback = False
+    _last_progress_seen = 0.0
     player.stop()
     queue_manager.clear_paused_position()
 
@@ -463,7 +490,7 @@ def api_player_shuffle():
 
 
 def playback_worker():
-    global _manual_stop_requested, _last_play_start_ts, _last_confirmed_playback
+    global _manual_stop_requested, _last_play_start_ts, _last_confirmed_playback, _last_progress_seen
 
     while True:
         try:
@@ -475,9 +502,19 @@ def playback_worker():
             current_status = current_item.get("status")
 
             if current_status == "playing":
+                raw_status = player.get_status()
+                time_pos = _extract_time_pos(raw_status)
+                if time_pos is not None and time_pos > _last_progress_seen:
+                    _last_progress_seen = time_pos
+
                 enough_time_passed = (time.time() - _last_play_start_ts) > 5.0
 
-                if enough_time_passed and _last_confirmed_playback and not player.is_playing():
+                if (
+                    enough_time_passed
+                    and _last_confirmed_playback
+                    and _last_progress_seen > 0.5
+                    and not raw_status.get("playing")
+                ):
                     queue_manager.mark_current_status("done")
                     queue_manager.clear_paused_position()
                     _last_confirmed_playback = False
